@@ -30,6 +30,9 @@ export type Profile = {
   point: any
 }
 
+export type ThemePreference = "system" | "light" | "dark";
+export type ThemeMode = "light" | "dark";
+
 type SessionState = {
   // snapshot
   status: AuthStatus;

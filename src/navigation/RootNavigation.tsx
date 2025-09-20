@@ -1,33 +1,48 @@
 // src/navigation/RootNavigator.tsx
-import React from 'react';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import React, { useMemo } from 'react';
+import {
+  NavigationContainer,
+  DefaultTheme,
+  DarkTheme,
+} from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack'; // or native-stack
+import { useTheme } from '../shared/hooks/useTheme';
 import { useSession } from '../state/useSession';
-import { Profile } from '../state/useSession';
 import AuthNavigation from './auth/AuthNavigation';
 import AdminNavigation from './admin/AdminNavigation';
 import UserNavigation from './users/UserNavigation';
 import DriverNavigation from './driver/DriverNavigation';
 
-function Splash() {
-  return null; // or your loader component
-}
+const Stack = createStackNavigator();
 
 export default function RootNavigator() {
-  const status = useSession(s => s.status);
-  const bootstrapped = useSession(s => s.bootstrapped);
-  const profileId = useSession(s => s.profileId);
-  const businessId = useSession(s => s.businessId);
-  const profile = useSession(s => s.Profile);
+  const { isDark, colors } = useTheme();
+  const { status, bootstrapped, profile } = useSession();
 
-  if (!bootstrapped || status === 'unknown') return <Splash />;
+  const navTheme = useMemo(
+    () => ({
+      dark: isDark,
+      colors: {
+        ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+        background: colors.bg, // screen background
+        card: colors.card, // headers, tab bar surface
+        text: colors.text,
+        border: colors.border,
+        primary: colors.brand.primary,
+      },
+    }),
+    [isDark, colors],
+  );
+
+  if (!bootstrapped || status === 'unknown') return null; // or a Splash
 
   return (
-    <NavigationContainer theme={DefaultTheme}>
+    <NavigationContainer theme={navTheme}>
       {status === 'signedOut' ? (
         <AuthNavigation />
-      ) : profile.role === 'ADMIN' ? (
+      ) : profile?.role === 'ADMIN' ? (
         <AdminNavigation />
-      ) : profile.role === 'MANAGER' ? (
+      ) : profile?.role === 'MANAGER' ? (
         <UserNavigation />
       ) : (
         <DriverNavigation />
