@@ -6,13 +6,45 @@ import tw from 'twrnc';
 import AuthInput from '../../shared/components/inputs/AuthInput';
 import AuthBotton from '../../shared/components/buttons/AuthBotton';
 import SecondaryAuthButton from '../../shared/components/buttons/SecondaryAuthButton';
-
+import { useNavigation } from '@react-navigation/native';
+import Config from 'react-native-config';
+import axios from 'axios';
 const LoginScreen = () => {
   const { colors } = useTheme(); // colors.bg, colors.text, colors.brand.primary, etc.
+  const navigation = useNavigation();
 
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const handleLogin = async () => {
+    setLoading(true);
+    try {
+      console.log(Config.API_BASE);
+      const { data, error } = await axios.post(
+        `${Config.API_BASE}/users/login`,
+        {
+          email: username,
+          password: password,
+        },
+      );
+      if (error) {
+        console.log(error);
+      }
+    } catch (error) {
+      console.log(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRedirectBusiness = async () => {
+    navigation.navigate('SignupBusinessAccount');
+  };
+
+  const handleRedirectDriver = async () => {
+    navigation.navigate('DriverSignup');
+  };
 
   return (
     <SafeAreaView style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
@@ -75,8 +107,8 @@ const LoginScreen = () => {
               </Text>
             </TouchableOpacity>
           </View>
-          <View>
-            <AuthBotton label="Login" loading={false} onPress={() => {}} />
+          <View style={tw`w-11/12`}>
+            <AuthBotton label="Login" loading={loading} onPress={handleLogin} />
           </View>
           <View style={tw`w-8/12 flex-row items-center justify-between mt-4`}>
             <View
@@ -99,7 +131,7 @@ const LoginScreen = () => {
             <SecondaryAuthButton
               label="Signup as Business"
               loading={false}
-              onPress={() => {}}
+              onPress={handleRedirectBusiness}
             />
             <SecondaryAuthButton
               label="Signup as Driver"
@@ -109,7 +141,7 @@ const LoginScreen = () => {
           </View>
         </View>
         <View
-          style={tw`w-9/12 flex-row items-center justify-between mt-4 mb-4`}
+          style={tw`w-8/12 flex-row items-center justify-between mt-4 mb-4`}
         >
           <Text style={[tw`text-xs text-center`, { color: colors.text }]}>
             By continuing, you agree to Movaro Inc. Terms of Service and Privacy

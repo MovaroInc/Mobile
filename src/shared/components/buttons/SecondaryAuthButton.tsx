@@ -14,24 +14,25 @@ const SecondaryAuthButton = ({ label, loading, onPress }: Props) => {
   const { colors } = useTheme();
 
   return (
-    <View
+    <TouchableOpacity
+      onPress={onPress}
       style={[
         tailwind`w-11/12 rounded-3 px-3 mt-4  h-12 flex flex-row justify-between items-center`,
         { backgroundColor: colors.brand.secondary },
       ]}
     >
       <View />
-      <TouchableOpacity onPress={onPress}>
+      <View>
         {loading ? (
           <ActivityIndicator size="small" color="white" />
         ) : (
           <Text style={tailwind`text-white font-semibold`}>{label}</Text>
         )}
-      </TouchableOpacity>
+      </View>
       <View>
         <ChevronRight height={20} width={20} color={'white'} />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
