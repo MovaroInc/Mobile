@@ -1,40 +1,97 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../shared/hooks/useTheme';
 import tw from 'twrnc';
 import AuthInput from '../../shared/components/inputs/AuthInput';
 import AuthBotton from '../../shared/components/buttons/AuthBotton';
 import SecondaryAuthButton from '../../shared/components/buttons/SecondaryAuthButton';
+import { supabase } from '../../shared/lib/supabase';
 import { useNavigation } from '@react-navigation/native';
 import Config from 'react-native-config';
 import axios from 'axios';
+import { api } from '../../shared/lib/api';
 const LoginScreen = () => {
   const { colors } = useTheme(); // colors.bg, colors.text, colors.brand.primary, etc.
   const navigation = useNavigation();
 
-  const [username, setUsername] = useState<string>('');
+  const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [showPassword, setShowPassword] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
   const handleLogin = async () => {
     setLoading(true);
     try {
-      console.log(Config.API_BASE);
-      const { data, error } = await axios.post(
-        `${Config.API_BASE}/users/login`,
-        {
-          email: username,
-          password: password,
-        },
-      );
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      console.log('data', data);
+      console.log('error', error);
+
       if (error) {
-        console.log(error);
+        const code = (error as any)?.code;
+        const msg =
+          code === 'email_not_confirmed'
+            ? 'Please verify your email before logging in.'
+            : error.message || 'Invalid email or password.';
+        Alert.alert(
+          code === 'email_not_confirmed'
+            ? 'Email not verified'
+            : 'Login failed',
+          msg,
+          [
+            {
+              text: 'Resend',
+              onPress: handleResendEmailVerification,
+            },
+          ],
+        );
+        return;
       }
-    } catch (error) {
-      console.log(error);
+
+      const { data: session } = data ?? {};
+      console.log('session', session);
+      if (session?.access_token) {
+        const res = await api
+          .get('/me', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+          .catch(() => null);
+        // You could stash res?.data?.data into a store immediately if you want extra snappiness.
+      }
+    } catch (e: any) {
+      console.log('Login error:', e);
+      Alert.alert('Login failed', e.message || 'Unexpected response.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendEmailVerification = async () => {
+    try {
+      const { success, data, message, code } = await api.post<{
+        success: boolean;
+        data: any | null;
+        error: any | null;
+        message: string | null;
+      }>('/users/send-email-verification', {
+        email,
+      });
+      if (!success) {
+        Alert.alert(
+          'Resend email verification failed',
+          message || 'Unexpected response.',
+        );
+        return;
+      }
+      Alert.alert(
+        'Email verification sent',
+        message || 'Email verification sent.',
+      );
+    } catch (e: any) {
+      console.log('Resend email verification error:', e);
     }
   };
 
@@ -82,13 +139,16 @@ const LoginScreen = () => {
             ]}
           >
             <AuthInput
-              value={username}
-              onChangeText={setUsername}
+              value={email}
+              onChangeText={setEmail}
               secureTextEntry={false}
-              placeholder="Username"
-              icon="User"
+              placeholder="Email"
+              icon="Mail"
               showSecure={false}
               toggleSecure={() => setShowPassword(!showPassword)}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              isValid={true}
             />
             <AuthInput
               value={password}
@@ -98,6 +158,7 @@ const LoginScreen = () => {
               icon="Lock"
               showSecure={true}
               toggleSecure={() => setShowPassword(!showPassword)}
+              isValid={true}
             />
           </View>
           <View style={tw`w-11/12 flex items-end mt-3`}>

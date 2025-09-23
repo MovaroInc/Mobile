@@ -203,8 +203,10 @@ export async function createCustomerAccount(
 export async function updateProfileAndBusiness(
   profile: any,
   business: any,
-  customerId: number,
+  employee: any,
+  customer: any,
 ): Promise<{ success: boolean; data: any; error: any; message: string }> {
+  console.log('updating profile and business', profile, business, employee);
   const { success, data, error, message } = await api.post<{
     success: boolean;
     data: any | null;
@@ -212,6 +214,7 @@ export async function updateProfileAndBusiness(
     message: string | null;
   }>('/users/update-profile', {
     business_id: business.id,
+    employee_id: employee.id,
     id: profile.id,
   });
   if (!success) {
@@ -228,7 +231,7 @@ export async function updateProfileAndBusiness(
     error: any | null;
     message: string | null;
   }>('/business/update-business', {
-    customer_id: customerId,
+    customer_id: customer.id,
     id: business.id,
   });
   if (!success2) {
@@ -236,3 +239,14 @@ export async function updateProfileAndBusiness(
   }
   return { success: success2, data: data2, error: error2, message: message2 };
 }
+
+const attemptLogin = async (username: string, password: string) => {
+  const { success, data, error, message } = await api.post<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>('/users/login', { username, password });
+
+  return { success, data, error, message };
+};

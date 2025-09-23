@@ -54,8 +54,9 @@ const SignupBusinessScreen = () => {
       url: 'https://google-place-autocomplete-and-place-info.p.rapidapi.com/maps/api/place/autocomplete/json',
       params: { input: text },
       headers: {
-        'x-rapidapi-key': Config.GOOGLE_API_KEY,
-        'x-rapidapi-host': Config.GOOGLE_API_HOST,
+        'x-rapidapi-key': 'c077600dd0msh70cad04baf5f0e2p187ab4jsn23535e260f32',
+        'x-rapidapi-host':
+          'google-place-autocomplete-and-place-info.p.rapidapi.com',
       },
     };
 
@@ -77,8 +78,8 @@ const SignupBusinessScreen = () => {
         address: text,
       },
       headers: {
-        'x-rapidapi-key': Config.GOOGLE_API_KEY,
-        'x-rapidapi-host': Config.GOOGLE_API_HOST,
+        'x-rapidapi-key': 'c077600dd0msh70cad04baf5f0e2p187ab4jsn23535e260f32',
+        'x-rapidapi-host': 'google-maps-geocoding3.p.rapidapi.com',
       },
     };
     const customerPosition = await axios.request(options);

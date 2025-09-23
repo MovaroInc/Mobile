@@ -91,8 +91,8 @@ const CreatingProfileScreen = () => {
       await FinishingUp(
         createdBusiness,
         createdProfile,
-        createdEmployee.id,
-        createdCustomer.id,
+        createdEmployee,
+        createdCustomer,
       );
       await sendEmail();
     } catch (error) {
@@ -288,15 +288,10 @@ const CreatingProfileScreen = () => {
     }, 1500);
   };
 
-  const FinishingUp = async (
-    biz: any,
-    usr: any,
-    employeeId: number,
-    customerId: number,
-  ) => {
-    console.log('finishing up', usr, biz, employeeId, customerId);
+  const FinishingUp = async (biz: any, usr: any, empl: any, cust: any) => {
+    console.log('finishing up', usr, biz, empl, cust);
     setProcessing({ ...processing, finishingUp: true });
-    const { data } = await updateProfileAndBusiness(usr, biz, customerId);
+    const { data } = await updateProfileAndBusiness(usr, biz, empl, cust);
     console.log('finishing', data);
     if (!data.success) {
       setErrors(es => ({
