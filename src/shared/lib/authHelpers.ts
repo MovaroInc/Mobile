@@ -1,4 +1,6 @@
+import { useSession } from '../../state/useSession';
 import { api } from './api';
+import { supabase } from './supabase';
 
 export async function createUserAccount(
   email: string,

@@ -11,9 +11,11 @@ import { useNavigation } from '@react-navigation/native';
 import Config from 'react-native-config';
 import axios from 'axios';
 import { api } from '../../shared/lib/api';
+import { useSession } from '../../state/useSession';
 const LoginScreen = () => {
   const { colors } = useTheme(); // colors.bg, colors.text, colors.brand.primary, etc.
   const navigation = useNavigation();
+  const { setUserId } = useSession();
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
@@ -27,40 +29,29 @@ const LoginScreen = () => {
         password,
       });
 
-      console.log('data', data);
-      console.log('error', error);
+      console.log('login data', data);
+      console.log('loginerror', error);
 
       if (error) {
         const code = (error as any)?.code;
-        const msg =
-          code === 'email_not_confirmed'
-            ? 'Please verify your email before logging in.'
-            : error.message || 'Invalid email or password.';
-        Alert.alert(
-          code === 'email_not_confirmed'
-            ? 'Email not verified'
-            : 'Login failed',
-          msg,
-          [
-            {
-              text: 'Resend',
-              onPress: handleResendEmailVerification,
-            },
-          ],
-        );
+        const isUnverified = code === 'email_not_confirmed';
+
+        const title = isUnverified ? 'Email not verified' : 'Login failed';
+        const message = isUnverified
+          ? 'Please verify your email before logging in.'
+          : error.message || 'Invalid email or password.';
+
+        const buttons = isUnverified
+          ? [
+              { text: 'Resend', onPress: handleResendEmailVerification },
+              { text: 'OK' },
+            ]
+          : [{ text: 'OK' }];
+
+        Alert.alert(title, message, buttons);
         return;
       }
-
-      const { data: session } = data ?? {};
-      console.log('session', session);
-      if (session?.access_token) {
-        const res = await api
-          .get('/me', {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          })
-          .catch(() => null);
-        // You could stash res?.data?.data into a store immediately if you want extra snappiness.
-      }
+      setUserId({ userId: data.user.id });
     } catch (e: any) {
       console.log('Login error:', e);
       Alert.alert('Login failed', e.message || 'Unexpected response.');

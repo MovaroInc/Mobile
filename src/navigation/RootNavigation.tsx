@@ -36,13 +36,15 @@ export default function RootNavigator() {
 
   if (!bootstrapped || status === 'unknown') return null; // or a Splash
 
+  console.log('profile', profile);
+
   return (
     <NavigationContainer theme={navTheme}>
       {status === 'signedOut' ? (
         <AuthNavigation />
-      ) : profile?.role === 'ADMIN' ? (
+      ) : profile?.role === 'owner' ? (
         <AdminNavigation />
-      ) : profile?.role === 'MANAGER' ? (
+      ) : profile?.role === 'manager' ? (
         <UserNavigation />
       ) : (
         <DriverNavigation />

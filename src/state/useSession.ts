@@ -1,112 +1,135 @@
-import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-import { MMKV } from "react-native-mmkv";
+// src/state/useSession.ts
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { MMKV } from 'react-native-mmkv';
 
-const kv = new MMKV({ id: "movaro-session" });
+const kv = new MMKV({ id: 'movaro-session' });
 const mmkvStorage = {
   getItem: (k: string) => kv.getString(k) ?? null,
   setItem: (k: string, v: string) => kv.set(k, v),
   removeItem: (k: string) => kv.delete(k),
 };
 
-export type AuthStatus = "unknown" | "signedOut" | "signedIn";
+export type AuthStatus = 'unknown' | 'signedOut' | 'signedIn';
 
 export type Profile = {
-  user_id: string,
-  first_name: string,
-  last_name: string,
-  email: string,
-  phone: string,
-  username: string,
-  test: boolean,
-  role: string,
-  status: string,
-  lastLogin: Date,
-  business_id: number,
-  customer_id: number,
-  latitude: number,
-  longitude: number,
-  location: string,
-  point: any
-}
+  id: number;
+  user_id: string;
+  email: string | null;
+  phone: string | null;
+  role: string | null;
+  status: string | null;
+  business_id: number | null;
+  employee_id: number | null;
+  subscription_id: number | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  username?: string | null;
+} | null;
 
-export type ThemePreference = "system" | "light" | "dark";
-export type ThemeMode = "light" | "dark";
+export type Business = Record<string, any> | null;
+export type Employee = Record<string, any> | null;
+export type Subscription = Record<string, any> | null;
 
 type SessionState = {
-  // snapshot
   status: AuthStatus;
-  bootstrapped: boolean;         // we checked auth at least once
+  bootstrapped: boolean;
   userId?: string;
-  profileId?: number;
-  profile?: Profile;
-  businessId?: string;
 
-  // actions
-  setSignedIn: (p: { userId?: string; profileId?: number; profile?: Profile, businessId?: string }) => void;
-  setIds: (p: { profileId?: number; profile?: Profile, businessId?: string }) => void;
+  profile: Profile;
+  business: Business;
+  employee: Employee;
+  subscription: Subscription;
+
+  setSignedIn: (p: { userId?: string }) => void;
+  setUserId: (p: { userId?: string }) => void;
+  setEntities: (p: {
+    profile?: Profile;
+    business?: Business;
+    employee?: Employee;
+    subscription?: Subscription;
+  }) => void;
   setSignedOut: () => void;
   setBootstrapped: (b: boolean) => void;
   hardReset: () => void;
 };
 
-const initial: Pick<SessionState, "status" | "bootstrapped"> = {
-  status: "unknown",
+const initial: Pick<SessionState, 'status' | 'bootstrapped'> = {
+  status: 'unknown',
   bootstrapped: false,
 };
 
 export const useSession = create<SessionState>()(
   persist(
-    (set) => ({
+    set => ({
       ...initial,
-      setSignedIn: ({ userId, profileId, profile, businessId }) =>
-        set((s) => ({
+      userId: undefined,
+      profile: null,
+      business: null,
+      employee: null,
+      subscription: null,
+
+      setSignedIn: ({ userId }) =>
+        set(s => ({ ...s, status: 'signedIn', userId: userId ?? s.userId })),
+
+      setUserId: ({ userId }) =>
+        set(s => ({ ...s, userId: userId ?? s.userId })),
+
+      setEntities: ({ profile, business, employee, subscription }) =>
+        set(s => ({
           ...s,
-          status: "signedIn",
-          userId: userId ?? s.userId,
-          profileId: profileId ?? s.profileId,
-          profile: profile ?? s.profile,
-          businessId: businessId ?? s.businessId,
+          profile: profile !== undefined ? profile : s.profile,
+          business: business !== undefined ? business : s.business,
+          employee: employee !== undefined ? employee : s.employee,
+          subscription:
+            subscription !== undefined ? subscription : s.subscription,
         })),
-      setIds: ({ profileId, profile, businessId }) =>
-        set((s) => ({
-          ...s,
-          profileId: profileId ?? s.profileId,
-          profile: profile ?? s.profile,
-          businessId: businessId ?? s.businessId,
-        })),
+
       setSignedOut: () =>
         set(() => ({
-          status: "signedOut",
+          status: 'signedOut',
           userId: undefined,
-          profileId: undefined,
-          profile: undefined,
-          businessId: undefined,
+          profile: null,
+          business: null,
+          employee: null,
+          subscription: null,
           bootstrapped: true,
         })),
-      setBootstrapped: (b) => set((s) => ({ ...s, bootstrapped: b })),
+
+      setBootstrapped: b => set(s => ({ ...s, bootstrapped: b })),
+
       hardReset: () =>
         set(() => ({
-          status: "signedOut",
+          status: 'signedOut',
           userId: undefined,
-          profileId: undefined,
-          profile: undefined,
-          businessId: undefined,
+          profile: null,
+          business: null,
+          employee: null,
+          subscription: null,
           bootstrapped: true,
         })),
     }),
     {
-      name: "movaro/session",
+      name: 'movaro/session',
       storage: createJSONStorage(() => mmkvStorage),
-      // Only persist the essentials
-      partialize: (s) => ({
+      partialize: s => ({
         status: s.status,
-        userId: s.userId,
-        profileId: s.profileId,
-        profile: s.profile,
-        businessId: s.businessId,
         bootstrapped: s.bootstrapped,
+        userId: s.userId,
+        profile: s.profile,
+        business: s.business,
+        employee: s.employee,
+        subscription: s.subscription,
       }),
-    }
-  )
+    },
+  ),
 );
+
+// selectors
+export const useAuthStatus = () => useSession(s => s.status);
+export const useBootstrapped = () => useSession(s => s.bootstrapped);
+export const useProfile = () => useSession(s => s.profile);
+export const useBusiness = () => useSession(s => s.business);
+export const useEmployee = () => useSession(s => s.employee);
+export const useSubscription = () => useSession(s => s.subscription);
+export const useUserId = () => useSession(s => s.userId);

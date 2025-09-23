@@ -1,48 +1,47 @@
+// src/providers/SessionProvider.tsx
 import React, { useEffect } from 'react';
 import { supabase } from '../shared/lib/supabase';
-import { useSession, type Profile } from '../state/useSession';
-import Config from 'react-native-config';
-// (optional) if you use React Query, import your client and clear on auth changes
-// import { queryClient } from "../shared/lib/queryClient";
+import {
+  useSession,
+  type Profile,
+  type Business,
+  type Employee,
+  type Subscription,
+} from '../state/useSession';
+import { api } from '../shared/lib/api';
 
-type ID = string | number; // keep consistent with your store
-
-// ---- helpers ----
-async function authHeader() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  return { Authorization: `Bearer ${session?.access_token ?? ''}` };
-}
-
+// Match your /users/me response
 type MeResponse = {
-  profileId?: ID;
-  businessId?: ID;
-  profile?: Profile; // <-- now included
+  success: boolean;
+  data: {
+    profile: Profile;
+    business: Business;
+    employee: Employee;
+    subscription: Subscription;
+  };
+  message?: string | null;
 };
 
-async function fetchMe(): Promise<MeResponse> {
-  const res = await fetch(`${Config.API_BASE}/me`, {
-    headers: await authHeader(),
-  });
-  if (res.status === 401) {
-    // token is invalid on server side, sign out locally too
-    await supabase.auth.signOut();
-    throw new Error('Unauthorized');
+// Call your API passing userId directly
+async function fetchMe(userId: string): Promise<MeResponse | null> {
+  try {
+    const res = await api.post('/users/me', { userId });
+    // Axios: data is the JSON payload
+    return res.data as MeResponse;
+  } catch (e) {
+    console.log('[SessionProvider] fetchMe error:', e);
+    return null;
   }
-  if (!res.ok) throw new Error('Failed to load /me');
-  return res.json();
 }
 
-// ---- provider ----
 export default function SessionProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const setSignedOut = useSession(s => s.setSignedOut);
   const setSignedIn = useSession(s => s.setSignedIn);
-  const setIds = useSession(s => s.setIds);
+  const setEntities = useSession(s => s.setEntities);
+  const setSignedOut = useSession(s => s.setSignedOut);
   const setBootstrapped = useSession(s => s.setBootstrapped);
   const hardReset = useSession(s => s.hardReset);
 
@@ -50,59 +49,67 @@ export default function SessionProvider({
     let cancelled = false;
 
     (async () => {
-      // 1) Cold start: what does Supabase say?
+      // 1) Cold start: do we have a Supabase session?
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
       if (!session) {
-        setSignedOut(); // status = signedOut, bootstrapped = true (per your store)
+        if (!cancelled) {
+          setSignedOut(); // status=signedOut
+          setBootstrapped(true); // nav can render auth flow immediately
+        }
         return;
       }
 
-      // Have a session → minimally set userId
-      if (!cancelled) setSignedIn({ userId: session.user.id });
+      // We have a session → minimally mark signed-in and capture userId
+      const uid = session.user.id;
+      if (!cancelled) setSignedIn({ userId: uid });
 
-      // Resolve app-specific IDs (profile/business/profile) from your API
-      try {
-        const me = await fetchMe();
-        if (!cancelled) {
-          setIds({
-            profileId: me.profileId,
-            businessId: me.businessId,
-            profile: me.profile, // <-- pass profile through
+      // 2) Resolve app entities from your API (with userId)
+      const me = await fetchMe(uid);
+      if (!cancelled) {
+        if (me?.success) {
+          setEntities({
+            profile: me.data.profile ?? null,
+            business: me.data.business ?? null,
+            employee: me.data.employee ?? null,
+            subscription: me.data.subscription ?? null,
           });
         }
-      } finally {
-        if (!cancelled) setBootstrapped(true); // nav can now decide what to render
+        setBootstrapped(true);
       }
     })();
 
-    // 2) Live updates: login/logout/token refresh
+    // 3) Live updates: login/logout/token refresh
     const { data: sub } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // Signed out or no session -> clear everything
         if (!session || event === 'SIGNED_OUT') {
-          hardReset();
-          // queryClient.clear?.(); // optional
+          hardReset(); // status=signedOut + entities cleared + bootstrapped=true
           return;
         }
 
+        // Any event that implies we have/updated a session
         if (
           event === 'SIGNED_IN' ||
           event === 'TOKEN_REFRESHED' ||
           event === 'USER_UPDATED'
         ) {
-          if (!cancelled) setSignedIn({ userId: session.user.id });
+          const uid = session.user.id;
+          setSignedIn({ userId: uid });
 
-          const me = await fetchMe().catch(() => ({} as MeResponse));
-          if (!cancelled) {
-            setIds({
-              profileId: me.profileId,
-              businessId: me.businessId,
-              profile: me.profile, // <-- include profile here too
+          const me = await fetchMe(uid);
+          if (me?.success) {
+            setEntities({
+              profile: me.data.profile ?? null,
+              business: me.data.business ?? null,
+              employee: me.data.employee ?? null,
+              subscription: me.data.subscription ?? null,
             });
           }
-          // queryClient.clear?.(); // optional: avoid cross-user cache bleed
+
+          setBootstrapped(true);
         }
       },
     );
@@ -111,7 +118,7 @@ export default function SessionProvider({
       cancelled = true;
       sub.subscription?.unsubscribe();
     };
-  }, []);
+  }, [setSignedIn, setEntities, setSignedOut, setBootstrapped, hardReset]);
 
   return <>{children}</>;
 }
