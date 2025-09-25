@@ -8,6 +8,7 @@ import { useSession } from '../../state/useSession';
 import TempStandardButton from '../../shared/components/buttons/TempStandardButton';
 import { useNavigation } from '@react-navigation/native';
 import Stepper from '../../shared/components/inputs/Stepper';
+import { ChevronsLeft } from 'react-native-feather';
 
 type BillingCycle = 'monthly' | 'annual';
 
@@ -92,11 +93,19 @@ const AddonsScreen = () => {
         <View
           style={tailwind`w-full flex-row items-center justify-between mt-4`}
         >
-          <Text
-            style={[tailwind`text-2xl font-semibold`, { color: colors.text }]}
-          >
-            Add-ons
-          </Text>
+          <View style={tailwind`flex-row items-center`}>
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <ChevronsLeft size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text
+              style={[
+                tailwind`text-2xl font-semibold ml-2`,
+                { color: colors.text },
+              ]}
+            >
+              Add-ons
+            </Text>
+          </View>
           <TouchableOpacity onPress={() => setSignedOut()}>
             <Text style={[tailwind`text-base`, { color: colors.accent }]}>
               Log out

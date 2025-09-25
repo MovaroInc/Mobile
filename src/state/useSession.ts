@@ -1,7 +1,7 @@
-// src/state/useSession.ts
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { MMKV } from 'react-native-mmkv';
+import { api } from '../shared/lib/api';
 
 const kv = new MMKV({ id: 'movaro-session' });
 const mmkvStorage = {
@@ -31,6 +31,18 @@ export type Business = Record<string, any> | null;
 export type Employee = Record<string, any> | null;
 export type Subscription = Record<string, any> | null;
 
+// Response shape from /users/me
+type MeResponse = {
+  success: boolean;
+  data: {
+    profile: Profile;
+    business: Business;
+    employee: Employee;
+    subscription: Subscription;
+  };
+  message?: string | null;
+};
+
 type SessionState = {
   status: AuthStatus;
   bootstrapped: boolean;
@@ -52,6 +64,9 @@ type SessionState = {
   setSignedOut: () => void;
   setBootstrapped: (b: boolean) => void;
   hardReset: () => void;
+
+  /** Fetches /users/me and updates entities (requires userId already set in the store). */
+  refreshMe: () => Promise<void>;
 };
 
 const initial: Pick<SessionState, 'status' | 'bootstrapped'> = {
@@ -61,7 +76,7 @@ const initial: Pick<SessionState, 'status' | 'bootstrapped'> = {
 
 export const useSession = create<SessionState>()(
   persist(
-    set => ({
+    (set, get) => ({
       ...initial,
       userId: undefined,
       profile: null,
@@ -108,6 +123,27 @@ export const useSession = create<SessionState>()(
           subscription: null,
           bootstrapped: true,
         })),
+
+      // NEW
+      refreshMe: async () => {
+        const userId = get().userId;
+        if (!userId) return;
+        try {
+          const res = await api.post('/users/me', { userId });
+          const me = res.data as MeResponse;
+          if (me?.success) {
+            set(s => ({
+              ...s,
+              profile: me.data.profile ?? s.profile,
+              business: me.data.business ?? s.business,
+              employee: me.data.employee ?? s.employee,
+              subscription: me.data.subscription ?? s.subscription,
+            }));
+          }
+        } catch (e) {
+          console.log('[useSession.refreshMe] error:', e);
+        }
+      },
     }),
     {
       name: 'movaro/session',

@@ -14,6 +14,7 @@ import { useSession } from '../../state/useSession';
 import { plans } from '../../shared/utils/subscriptions';
 import TempStandardButton from '../../shared/components/buttons/TempStandardButton';
 import { useNavigation } from '@react-navigation/native';
+import { ChevronsLeft } from 'react-native-feather';
 
 type BillingCycle = 'monthly' | 'annual';
 
@@ -102,9 +103,7 @@ const ConfirmationScreen = () => {
     })}`;
 
   const nextStep = async () => {
-    await AsyncStorage.setItem('addonStops', extraStopsUnits.toString());
-    await AsyncStorage.setItem('extraDrivers', extraDrivers.toString());
-    navigation.navigate('Confirmation');
+    navigation.navigate('BillingSetup');
   };
 
   return (
@@ -114,11 +113,19 @@ const ConfirmationScreen = () => {
         <View
           style={tailwind`w-full flex-row items-center justify-between mt-4`}
         >
-          <Text
-            style={[tailwind`text-2xl font-semibold`, { color: colors.text }]}
-          >
-            Confirmation
-          </Text>
+          <View style={tailwind`flex-row items-center`}>
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <ChevronsLeft size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text
+              style={[
+                tailwind`text-2xl font-semibold ml-2`,
+                { color: colors.text },
+              ]}
+            >
+              Confirmation
+            </Text>
+          </View>
 
           <TouchableOpacity onPress={() => setSignedOut()}>
             <Text style={[tailwind`text-base`, { color: colors.accent }]}>

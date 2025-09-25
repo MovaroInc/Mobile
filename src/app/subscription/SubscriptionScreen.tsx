@@ -26,8 +26,10 @@ const SubscriptionScreen = () => {
     setSelectedTier(tier.id);
     console.log('selectedPlan', plan);
     console.log('selectedTier', tier);
+    console.log('selectedTerm', term);
     await AsyncStorage.setItem('selectedPlan', JSON.stringify(plan));
     await AsyncStorage.setItem('selectedTier', JSON.stringify(tier));
+    await AsyncStorage.setItem('selectedTerm', term);
   };
 
   const nextScreen = async () => {
