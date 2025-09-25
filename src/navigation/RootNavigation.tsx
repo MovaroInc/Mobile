@@ -12,12 +12,14 @@ import AuthNavigation from './auth/AuthNavigation';
 import AdminNavigation from './admin/AdminNavigation';
 import UserNavigation from './users/UserNavigation';
 import DriverNavigation from './driver/DriverNavigation';
+import SubscriptionNavigation from './subscription/SubscriptionNavigation';
+import AppShell from './AppShell';
 
 const Stack = createStackNavigator();
 
 export default function RootNavigator() {
   const { isDark, colors } = useTheme();
-  const { status, bootstrapped, profile } = useSession();
+  const { status, bootstrapped, profile, subscription } = useSession();
 
   const navTheme = useMemo(
     () => ({
@@ -36,19 +38,21 @@ export default function RootNavigator() {
 
   if (!bootstrapped || status === 'unknown') return null; // or a Splash
 
-  console.log('profile', profile);
-
   return (
     <NavigationContainer theme={navTheme}>
-      {status === 'signedOut' ? (
-        <AuthNavigation />
-      ) : profile?.role === 'owner' ? (
-        <AdminNavigation />
-      ) : profile?.role === 'manager' ? (
-        <UserNavigation />
-      ) : (
-        <DriverNavigation />
-      )}
+      <AppShell>
+        {status === 'signedOut' ? (
+          <AuthNavigation />
+        ) : subscription === null || subscription.status !== 'active' ? (
+          <SubscriptionNavigation />
+        ) : profile?.role === 'owner' ? (
+          <AdminNavigation />
+        ) : profile?.role === 'manager' ? (
+          <UserNavigation />
+        ) : (
+          <DriverNavigation />
+        )}
+      </AppShell>
     </NavigationContainer>
   );
 }

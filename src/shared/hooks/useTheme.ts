@@ -16,6 +16,8 @@ export function useTheme() {
       muted: isDark ? '#94A3B8' : '#6B7280',
       border: isDark ? '#363636' : '#c7cbd4',
       supp: isDark ? '#FF6A00' : '#FF6A00',
+      accent: isDark ? '#00a6f4' : '#005ad0',
+      borderSecondary: isDark ? '#292929' : '#dcdfe6',
     }),
     [isDark],
   );

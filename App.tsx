@@ -1,15 +1,23 @@
 import React from 'react';
+import { StatusBar } from 'react-native';
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from 'react-native-safe-area-context';
+
 import SessionProvider from './src/providers/SessionProvider';
-import RootNavigator from './src/navigation/RootNavigation';
 import AppProvider from './src/providers/AppProvider';
-// optional providers you use (Gesture/SafeArea/Query/Toast) can wrap here
+import RootNavigator from './src/navigation/RootNavigation';
 
 export default function App() {
   return (
-    <SessionProvider>
-      <AppProvider>
-        <RootNavigator />
-      </AppProvider>
-    </SessionProvider>
+    <SafeAreaProvider initialWindowMetrics={initialWindowMetrics}>
+      <StatusBar barStyle="light-content" />
+      <SessionProvider>
+        <AppProvider>
+          <RootNavigator />
+        </AppProvider>
+      </SessionProvider>
+    </SafeAreaProvider>
   );
 }
