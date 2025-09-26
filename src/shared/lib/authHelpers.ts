@@ -169,6 +169,7 @@ export async function createCustomerAccount(
   special_requirements: string | null,
   tags: string | null,
   settings: any,
+  defaultCustomer: boolean,
 ): Promise<{ success: boolean; data: any; error: any; message: string }> {
   const { success, data, error, message } = await api.post<{
     success: boolean;
@@ -198,6 +199,7 @@ export async function createCustomerAccount(
     special_requirements,
     tags,
     settings,
+    default: defaultCustomer,
   });
   return { success, data, error, message };
 }

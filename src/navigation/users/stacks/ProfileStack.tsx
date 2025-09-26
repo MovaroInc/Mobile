@@ -1,18 +1,16 @@
 // src/navigation/stacks/AuthStack.tsx
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import LoginScreen from '../../app/auth/LoginScreen';
-import HomeScreen from '../../app/home/HomeScreen';
-import UserHomeScreen from '../../app/home/UserHomeScreen';
+import ProfileScreen from '../../../app/users/ProfileScreen';
 type AuthParamList = {
-  Home: undefined;
+  Profile: undefined;
 };
 const Stack = createStackNavigator<AuthParamList>();
 
-export default function UserNavigation() {
+export default function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Home" component={UserHomeScreen} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
     </Stack.Navigator>
   );
 }

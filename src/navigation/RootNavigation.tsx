@@ -5,54 +5,54 @@ import {
   DefaultTheme,
   DarkTheme,
 } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack'; // or native-stack
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../shared/hooks/useTheme';
 import { useSession } from '../state/useSession';
 import AuthNavigation from './auth/AuthNavigation';
 import AdminNavigation from './admin/AdminNavigation';
-import UserNavigation from './users/UserNavigation';
+import UserTab from './users/tabs/UserTabNavigation';
 import DriverNavigation from './driver/DriverNavigation';
 import SubscriptionNavigation from './subscription/SubscriptionNavigation';
-import AppShell from './AppShell';
-
-const Stack = createStackNavigator();
 
 export default function RootNavigator() {
   const { isDark, colors } = useTheme();
   const { status, bootstrapped, profile, subscription } = useSession();
 
+  const base = isDark ? DarkTheme : DefaultTheme;
+  const appBg = colors.bg; // single source of truth
+
   const navTheme = useMemo(
     () => ({
-      dark: isDark,
+      ...base, // keep fonts/animations/etc
       colors: {
-        ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
-        background: colors.bg, // screen background
-        card: colors.card, // headers, tab bar surface
-        text: colors.text,
-        border: colors.border,
-        primary: colors.brand.primary,
+        ...base.colors,
+        background: appBg, // screen background
+        card: appBg, // headers/tab surfaces
       },
     }),
-    [isDark, colors],
+    [isDark, appBg],
   );
 
-  if (!bootstrapped || status === 'unknown') return null; // or a Splash
+  if (!bootstrapped || status === 'unknown') return null;
 
   return (
     <NavigationContainer theme={navTheme}>
-      <AppShell>
+      <SafeAreaView
+        edges={['top', 'bottom']}
+        style={{ flex: 1, backgroundColor: appBg }}
+      >
         {status === 'signedOut' ? (
           <AuthNavigation />
         ) : subscription === null || subscription.status !== 'active' ? (
           <SubscriptionNavigation />
-        ) : profile?.role === 'owner' ? (
+        ) : profile?.role === 'founder' ? (
           <AdminNavigation />
-        ) : profile?.role === 'manager' ? (
-          <UserNavigation />
+        ) : profile?.role === 'owner' ? (
+          <UserTab />
         ) : (
           <DriverNavigation />
         )}
-      </AppShell>
+      </SafeAreaView>
     </NavigationContainer>
   );
 }

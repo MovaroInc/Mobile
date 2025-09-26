@@ -1,18 +1,13 @@
-// src/ui/AppShell.tsx
 import React from 'react';
-import { View, StatusBar } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useTheme } from '@/hooks/useTheme'; // returns { isDark, colors }
+import { View, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../shared/hooks/useTheme';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const { isDark, colors } = useTheme();
+  const { colors } = useTheme(); // expects colors.bg
   return (
-    <SafeAreaProvider>
-      <StatusBar
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={colors.bg}
-      />
-      <View style={{ flex: 1, backgroundColor: colors.bg }}>{children}</View>
-    </SafeAreaProvider>
+    <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
+      <View style={{ flex: 1, backgroundColor: 'white' }}>{children}</View>
+    </SafeAreaView>
   );
 }

@@ -10,6 +10,7 @@ export function useTheme() {
   const colors = useMemo(
     () => ({
       brand: { primary: '#005ad0', secondary: '#F08000' },
+      main: isDark ? '#0d0d0d' : '#FFFFFF',
       bg: isDark ? '#181818' : '#FFFFFF',
       card: isDark ? '#1f1e1e' : '#FFFFFF',
       text: isDark ? '#E5E7EB' : '#181818',

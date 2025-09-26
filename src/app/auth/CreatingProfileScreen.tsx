@@ -259,6 +259,7 @@ const CreatingProfileScreen = () => {
       null,
       '',
       {},
+      true,
     );
     console.log('customer', data);
     if (!data.success) {
