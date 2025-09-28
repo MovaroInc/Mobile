@@ -30,6 +30,7 @@ import {
   MapPin,
   Trash2,
   User,
+  PlusCircle,
 } from 'react-native-feather';
 import { useSession } from '../../state/useSession';
 import { grabCustomers, grabVendors } from '../../shared/lib/admiinApi';
@@ -385,19 +386,19 @@ export default function OperationScreen() {
       )}
 
       {/* Contextual FAB */}
-      <View style={tw`absolute right-5 bottom-6`}>
+      <View style={tw`absolute right-0 bottom-0 px-3 pb-4`}>
         <TouchableOpacity
           activeOpacity={0.9}
           style={[
-            tw`px-4 py-3 rounded-full flex-row items-center`,
-            { backgroundColor: colors.primary },
+            tw`px-3 py-2 rounded-full flex-row items-center`,
+            { backgroundColor: colors.brand.primary },
           ]}
           onPress={() => {
             const mode = tab === 'Customers' ? 'customer' : 'vendor';
             navigation.navigate('AddParty', { mode });
           }}
         >
-          <Plus width={18} height={18} color="#fff" />
+          <PlusCircle width={18} height={18} color="#fff" />
           <Text style={tw`text-white ml-2 font-semibold`}>
             {tab === 'Customers'
               ? 'Add Customer'

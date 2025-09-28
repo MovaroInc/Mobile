@@ -22,6 +22,7 @@ import {
   createCustomer,
   createVendor,
 } from '../../shared/lib/CustomerVendorApi';
+import FieldSuggestions from '../../shared/components/inputs/FieldSuggestions';
 
 type Mode = 'customer' | 'vendor';
 
@@ -418,64 +419,6 @@ function Field(props: any) {
           tw`px-3 py-2 rounded-xl`,
           { color: colors.text, backgroundColor: colors.border },
         ]}
-      />
-    </View>
-  );
-}
-
-function FieldSuggestions(props: any) {
-  const {
-    label,
-    colors,
-    flex,
-    suggestions,
-    setSuggestions,
-    setQuery,
-    setAddress,
-    ...rest
-  } = props;
-  return (
-    <View style={[flex ? tw`flex-1` : undefined, tw`mb-3`]}>
-      <Text style={tw`text-gray-400 text-xs mb-1`}>{label}</Text>
-      <TextInput
-        {...rest}
-        placeholderTextColor={'#9CA3AF'}
-        style={[
-          tw`px-3 py-2 rounded-xl ${
-            suggestions.length > 0 ? 'rounded-b-none' : ''
-          }`,
-          { color: colors.text, backgroundColor: colors.border },
-        ]}
-      />
-      <FlatList
-        data={suggestions}
-        style={{
-          backgroundColor: colors.border,
-          borderBottomLeftRadius: 10,
-          borderBottomRightRadius: 10,
-        }}
-        renderItem={({ item }) => {
-          return (
-            <TouchableOpacity
-              onPress={() => {
-                setQuery(item.description);
-                setAddress(item.description);
-                setSuggestions([]);
-              }}
-              style={[
-                tw`p-3 border-b border-gray-200`,
-                {
-                  backgroundColor: colors.border,
-                  borderBottomColor: colors.borderSecondary,
-                },
-              ]}
-            >
-              <Text style={[tw`text-sm`, { color: colors.text }]}>
-                {item.description}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
       />
     </View>
   );
