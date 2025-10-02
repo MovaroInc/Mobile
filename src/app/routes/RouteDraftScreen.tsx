@@ -1,5 +1,11 @@
 // src/app/routes/RouteDraftScreen.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   View,
   Text,
@@ -13,7 +19,11 @@ import {
 } from 'react-native';
 import tw from 'twrnc';
 import { useTheme } from '../../shared/hooks/useTheme';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import {
   ChevronLeft,
   Plus,
@@ -26,6 +36,7 @@ import {
   MapPin,
   User,
   X as CloseIcon,
+  Phone,
 } from 'react-native-feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -33,6 +44,7 @@ import Field from '../../shared/components/inputs/Field';
 import FieldSuggestions from '../../shared/components/inputs/FieldSuggestions';
 import { api } from '../../shared/lib/api';
 import { getRouteById } from '../../shared/lib/RouteHelpers';
+import { deleteStop } from '../../shared/lib/StopsHelpers';
 
 type RouteParams = {
   routeId: number;
@@ -120,18 +132,38 @@ export default function RouteDraftScreen() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStop, setEditingStop] = useState<Stop | null>(null);
 
+  const [headerTitle, setHeaderTitle] = useState('');
+
   useEffect(() => {
+    console.log('payload', payload);
+    const d = new Date(payload.service_date);
+    const label = d.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+    console.log('label', label);
+    setHeaderTitle(label);
+  }, [payload]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchStops();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
+
+  useLayoutEffect(() => {
     fetchStops();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeId]);
+  }, []);
 
   const fetchStops = async () => {
     setLoading(true);
     try {
       const res = await getRouteById(routeId);
-      setRoute(res.data[0]);
-      console.log('fetchStops res', res.data);
-      setStops((res.data?.data ?? []).sort((a, b) => a.sequence - b.sequence));
+      console.log('res', res.data.stops);
+      setRoute(res.data);
+      setStops(res.data.stops.sort((a, b) => a.sequence - b.sequence));
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Failed to load stops');
     } finally {
@@ -139,17 +171,8 @@ export default function RouteDraftScreen() {
     }
   };
 
-  useEffect(() => {
-    console.log('stops', stops);
-  }, [stops]);
-
-  useEffect(() => {
-    console.log('route', route);
-  }, [route]);
-
   const openCreate = () => {
-    setEditingStop(null);
-    setModalOpen(true);
+    nav.navigate('AddStopScreen1', { routeId, stopsCount: stops.length });
   };
   const openEdit = (s: Stop) => {
     setEditingStop(s);
@@ -228,17 +251,21 @@ export default function RouteDraftScreen() {
     }
   };
 
-  const headerTitle = useMemo(() => {
-    const d = new Date(payload.service_date);
-    const label = d.toLocaleDateString(undefined, {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    });
-    return label;
-  }, [payload.service_date]);
-
   const plannedStartHM = formatHMAmPm(payload.planned_start_at);
+
+  const confirmDelete = (s: Stop) => {
+    Alert.alert('Remove stop?', `Delete "${s.customer_name ?? 'Stop'}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteStop(s.id);
+          fetchStops();
+        },
+      },
+    ]);
+  };
 
   return (
     <KeyboardAvoidingView
@@ -360,94 +387,141 @@ export default function RouteDraftScreen() {
             )}
           </View>
         }
-        renderItem={({ item, index }) => (
-          <View style={[tw`px-4`]}>
-            <View
-              style={[
-                tw`rounded-2xl mb-3 p-3`,
-                { backgroundColor: colors.border },
-              ]}
-            >
-              <View style={tw`flex-row items-center justify-between`}>
-                <Text
-                  style={[tw`text-base font-semibold`, { color: colors.text }]}
-                >
-                  {index + 1}. {item.customer_name || 'Stop'}
-                </Text>
-                <View style={tw`flex-row`}>
-                  <TouchableOpacity
-                    onPress={() => openEdit(item)}
-                    style={tw`mr-2`}
-                  >
-                    <Edit3 width={18} height={18} color={colors.text} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => onDelete(item)}>
-                    <Trash2 width={18} height={18} color="#ef4444" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {!!item.address_line1 && (
-                <View style={tw`flex-row items-center mt-1`}>
-                  <MapPin width={14} height={14} color={colors.muted} />
+        renderItem={({ item, index }) => {
+          console.log('item', item);
+          return (
+            <View style={[tw`px-4`]}>
+              <View
+                style={[
+                  tw`rounded-2xl mb-3 p-3`,
+                  { backgroundColor: colors.border },
+                ]}
+              >
+                <View style={tw`flex-row items-center justify-between`}>
                   <Text
-                    style={[tw`ml-2 text-sm`, { color: colors.text }]}
-                    numberOfLines={2}
+                    style={[
+                      tw`text-base font-semibold`,
+                      { color: colors.text },
+                    ]}
                   >
-                    {item.address_line1}
-                    {item.city ? `, ${item.city}` : ''}
-                    {item.region ? `, ${item.region}` : ''}
-                    {item.postal_code ? ` ${item.postal_code}` : ''}
+                    {index + 1}.{' '}
+                    {item.business_name ||
+                      item.contact_name ||
+                      'Unknown Business'}
                   </Text>
+                  <View style={tw`flex-row`}>
+                    <TouchableOpacity
+                      onPress={() => openEdit(item)}
+                      style={tw`mr-2`}
+                    >
+                      <Edit3 width={18} height={18} color={colors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => confirmDelete(item)}>
+                      <Trash2 width={18} height={18} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              )}
 
-              <View style={tw`flex-row mt-2`}>
-                <View style={tw`px-2 py-1 rounded-xl mr-2`}>
-                  <Text style={[tw`text-xs`, { color: colors.muted }]}>
-                    {item.window_start
-                      ? `Start ${item.window_start}`
-                      : 'Start —'}
-                  </Text>
+                {!!item.address_line1 && (
+                  <View style={tw`flex-row items-center mt-1`}>
+                    <MapPin width={14} height={14} color={colors.muted} />
+                    <Text
+                      style={[tw`ml-2 text-sm`, { color: colors.text }]}
+                      numberOfLines={2}
+                    >
+                      {item.address_line1}, {item.city}, {item.region},
+                      {item.postal_code}
+                    </Text>
+                  </View>
+                )}
+                <View style={tw`flex-row items-center justify-start mt-1`}>
+                  {!!item.contact_name && (
+                    <View style={tw`flex-row items-center mr-2`}>
+                      <User width={14} height={14} color={colors.muted} />
+                      <Text
+                        style={[tw`ml-2 text-sm`, { color: colors.text }]}
+                        numberOfLines={2}
+                      >
+                        {item.contact_name}
+                      </Text>
+                    </View>
+                  )}
+                  {!!item.contact_phone && (
+                    <View style={tw`flex-row items-center ml-4`}>
+                      <Phone width={14} height={14} color={colors.muted} />
+                      <Text
+                        style={[tw`ml-2 text-sm`, { color: colors.text }]}
+                        numberOfLines={2}
+                      >
+                        {item.contact_phone}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                <View style={tw`px-2 py-1 rounded-xl`}>
-                  <Text style={[tw`text-xs`, { color: colors.muted }]}>
-                    {item.window_end ? `End ${item.window_end}` : 'End —'}
-                  </Text>
-                </View>
-              </View>
 
-              <View style={tw`flex-row justify-end mt-2`}>
-                <TouchableOpacity
-                  onPress={() => moveUp(index)}
-                  disabled={index === 0}
-                  style={[
-                    tw`px-2 py-1 rounded-xl mr-2`,
-                    {
-                      backgroundColor: colors.main,
-                      opacity: index === 0 ? 0.5 : 1,
-                    },
-                  ]}
-                >
-                  <ArrowUp width={16} height={16} color={colors.text} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => moveDown(index)}
-                  disabled={index === stops.length - 1}
-                  style={[
-                    tw`px-2 py-1 rounded-xl`,
-                    {
-                      backgroundColor: colors.main,
-                      opacity: index === stops.length - 1 ? 0.5 : 1,
-                    },
-                  ]}
-                >
-                  <ArrowDown width={16} height={16} color={colors.text} />
-                </TouchableOpacity>
+                <View style={tw`flex-row mt-2`}>
+                  {item.window_start && (
+                    <View style={tw`px-2 py-1 rounded-xl mr-2`}>
+                      <Text style={[tw`text-xs`, { color: colors.muted }]}>
+                        {item.window_start
+                          ? `Start ${item.window_start}`
+                          : 'Start —'}
+                      </Text>
+                    </View>
+                  )}
+                  {item.window_end && (
+                    <View style={tw`px-2 py-1 rounded-xl`}>
+                      <Text style={[tw`text-xs`, { color: colors.muted }]}>
+                        {item.window_end ? `End ${item.window_end}` : 'End —'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={tw`flex-row justify-between items-center mt-2`}>
+                  <View
+                    style={[
+                      tw`px-2 py-1 rounded-xl`,
+                      { backgroundColor: colors.main },
+                    ]}
+                  >
+                    <Text style={[tw`text-xs`, { color: colors.text }]}>
+                      {item.stop_type}
+                    </Text>
+                  </View>
+                  <View style={tw`flex-row`}>
+                    <TouchableOpacity
+                      onPress={() => moveUp(index)}
+                      disabled={index === 0}
+                      style={[
+                        tw`px-2 py-2 rounded-xl mr-2`,
+                        {
+                          backgroundColor: colors.main,
+                          opacity: index === 0 ? 0.5 : 1,
+                        },
+                      ]}
+                    >
+                      <ArrowUp width={16} height={16} color={colors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => moveDown(index)}
+                      disabled={index === stops.length - 1}
+                      style={[
+                        tw`px-2 py-2 rounded-xl`,
+                        {
+                          backgroundColor: colors.main,
+                          opacity: index === stops.length - 1 ? 0.5 : 1,
+                        },
+                      ]}
+                    >
+                      <ArrowDown width={16} height={16} color={colors.text} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          );
+        }}
         ListFooterComponent={
           <View style={tw`px-4 mt-2 mb-8`}>
             <TouchableOpacity

@@ -109,7 +109,6 @@ export default function RouteScreen() {
       try {
         // drivers
         const drvRes = await getDrivers(business.id);
-        console.log('drvRes', drvRes.data);
         const drvList: UiDriver[] = (drvRes?.data ?? [])
           .filter((e: Employee) => e.is_driver !== false) // allow true or null by default
           .map((e: Employee) => ({ id: e.id, name: toDriverName(e) }));
@@ -117,7 +116,6 @@ export default function RouteScreen() {
 
         // routes (with stops)
         const rRes = await getRoutesByBusinessId(business.id, selectedIso);
-        console.log('rRes', rRes.data);
         const fetched: DBRoute[] = (rRes?.data ?? []).map((r: any) => ({
           id: r.id,
           name: r.name,
@@ -142,16 +140,8 @@ export default function RouteScreen() {
     setRefreshing(true);
     try {
       const rRes = await getRoutesByBusinessId(business.id, selectedIso);
-      const fetched: DBRoute[] = (rRes?.data ?? []).map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        status: r.status,
-        employee_id: r.employee_id ?? r.driver_id ?? null,
-        planned_start_at: r.planned_start_at ?? null,
-        service_date: r.service_date,
-        stops: r.stops ?? [],
-      }));
-      setRoutes(fetched);
+      console.log('rRes', rRes.data);
+      setRoutes(rRes.data);
     } finally {
       setRefreshing(false);
     }
@@ -161,6 +151,7 @@ export default function RouteScreen() {
   const view = useMemo(() => {
     // Filter (API already filters by date, but keep it safe)
     const dayRoutes = routes.filter(r => r.service_date === selectedIso);
+    const allRoutes = routes;
 
     const totalRoutes = dayRoutes.length;
     const totalStops = dayRoutes.reduce(
@@ -199,6 +190,7 @@ export default function RouteScreen() {
       routes: dayRoutes,
       summary: { totalRoutes, totalStops, unassignedDrivers },
       driverAssignments,
+      allRoutes,
     };
   }, [routes, drivers, items, selectedIso]);
 
@@ -369,14 +361,14 @@ export default function RouteScreen() {
           />
 
           {/* Routes preview (from DB) */}
-          {view.routes.length > 0 ? (
+          {view.allRoutes.length > 0 ? (
             <View style={tw`mt-3`}>
               <Text
                 style={[tw`text-xl mb-2 font-semibold`, { color: colors.text }]}
               >
                 Routes
               </Text>
-              {view.routes.map(r => {
+              {routes.map(r => {
                 const stopsCount = r.stops?.length ?? 0;
                 const durationMin =
                   (r.stops ?? []).reduce(

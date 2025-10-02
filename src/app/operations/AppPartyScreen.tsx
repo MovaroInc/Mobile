@@ -84,7 +84,6 @@ export default function AddPartyScreen() {
       line1.trim().length > 3 &&
       city.trim().length > 1 &&
       region.trim().length > 1 &&
-      postal.trim().length > 0 &&
       !!business?.id
     );
   }, [
@@ -95,7 +94,6 @@ export default function AddPartyScreen() {
     line1,
     city,
     region,
-    postal,
     business?.id,
   ]);
 
@@ -105,7 +103,7 @@ export default function AddPartyScreen() {
       setLine1(fullAddress[0]);
       setCity(fullAddress[1]);
       setRegion(fullAddress[2]);
-      setCountry(fullAddress[3]);
+      setCountry('US');
     }
     getPlaceCoordinates(address);
   }, [address]);
@@ -290,79 +288,12 @@ export default function AddPartyScreen() {
           setQuery={setQuery}
           setAddress={setAddress}
         />
-        {/* ------------------------------------------------------------ */}
-        <View style={tw`w-full flex-row items-center justify-between mb-2`}>
-          <View
-            style={[
-              tw`w-1/3 h-.5 rounded-full`,
-              { backgroundColor: colors.border },
-            ]}
-          />
-          <View>
-            <Text style={[tw`text-sm`, { color: colors.text }]}>OR</Text>
-          </View>
-          <View
-            style={[
-              tw`w-1/3 h-.5 rounded-full`,
-              { backgroundColor: colors.border },
-            ]}
-          />
-        </View>
-
         <Field
-          label="Address Line 1"
-          value={line1}
-          onChangeText={setLine1}
-          colors={colors}
-          required={true}
-        />
-        <Field
-          label="Address Line 2"
+          label="Office / Suite #"
           value={line2}
           onChangeText={setLine2}
           colors={colors}
         />
-        <Row>
-          <Field
-            flex
-            label="City"
-            value={city}
-            onChangeText={setCity}
-            colors={colors}
-            required={true}
-          />
-          <Spacer />
-          <Field
-            flex
-            label="Region/State"
-            value={region}
-            onChangeText={setRegion}
-            colors={colors}
-            required={true}
-          />
-        </Row>
-        <Row>
-          <Field
-            flex
-            label="Postal Code"
-            value={postal}
-            onChangeText={setPostal}
-            colors={colors}
-            required={true}
-          />
-          <Spacer />
-          <Field
-            flex
-            label="Country Code"
-            value={country}
-            onChangeText={(v: string) => setCountry((v || '').toUpperCase())}
-            colors={colors}
-            autoCapitalize="characters"
-            maxLength={2}
-            placeholder="US"
-            required={true}
-          />
-        </Row>
       </ScrollView>
 
       {/* Footer */}

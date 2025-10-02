@@ -61,3 +61,25 @@ export const deleteVendor = async (id: number) => {
   }>(`/vendors/delete-vendor/${id}`);
   return res.data;
 };
+
+export const grabCustomers = async (businessId: number) => {
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/customers/get-customer-by-business-id/${businessId}`);
+  console.log('res', res);
+  return res.data;
+};
+
+export const grabVendors = async (businessId: number) => {
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/vendors/get-vendors-by-business-id/${businessId}`);
+  console.log('res', res);
+  return res.data;
+};

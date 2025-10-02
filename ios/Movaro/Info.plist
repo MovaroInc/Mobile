@@ -22,6 +22,17 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+  <!-- Camera -->
+<key>NSCameraUsageDescription</key>
+<string>Allow Movaro to use the camera to take stop photos and invoices.</string>
+
+<!-- Photo Library (reading/browsing) -->
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Allow Movaro to access your photo library to select images.</string>
+
+<!-- Photo Library (saving taken photos) -->
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>Allow Movaro to save photos to your library.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
