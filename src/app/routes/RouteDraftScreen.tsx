@@ -43,8 +43,11 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Field from '../../shared/components/inputs/Field';
 import FieldSuggestions from '../../shared/components/inputs/FieldSuggestions';
 import { api } from '../../shared/lib/api';
-import { getRouteById } from '../../shared/lib/RouteHelpers';
-import { deleteStop } from '../../shared/lib/StopsHelpers';
+import {
+  getRouteById,
+  publishRouteWithStops,
+} from '../../shared/lib/RouteHelpers';
+import { deleteStop, updateStopSequence } from '../../shared/lib/StopsHelpers';
 
 type RouteParams = {
   routeId: number;
@@ -171,7 +174,11 @@ export default function RouteDraftScreen() {
     }
   };
 
+  const MOVABLE = new Set<StopStatus>(['planned', 'scheduled']);
+  const canMoveStop = (s?: Stop) => !!s && (!s.status || MOVABLE.has(s.status));
+
   const openCreate = () => {
+    console.log('stops', stops.length);
     nav.navigate('AddStopScreen1', { routeId, stopsCount: stops.length });
   };
   const openEdit = (s: Stop) => {
@@ -200,21 +207,62 @@ export default function RouteDraftScreen() {
     ]);
   };
 
+  const swapStops = async (indexA: number, indexB: number) => {
+    if (
+      indexA < 0 ||
+      indexB < 0 ||
+      indexA >= stops.length ||
+      indexB >= stops.length
+    )
+      return;
+    const a = stops[indexA];
+    const b = stops[indexB];
+
+    // Only allow if both are movable
+    if (!canMoveStop(a) || !canMoveStop(b)) return;
+
+    const aSeq = a.sequence;
+    const bSeq = b.sequence;
+
+    // optimistic UI: swap sequences and resort by sequence
+    setStops(prev => {
+      const next = [...prev];
+      next[indexA] = { ...a, sequence: bSeq };
+      next[indexB] = { ...b, sequence: aSeq };
+      return next.sort((x, y) => x.sequence - y.sequence);
+    });
+    try {
+      // update both rows in parallel
+      await Promise.all([
+        updateStopSequence(a.id, { sequence: bSeq }),
+        updateStopSequence(b.id, { sequence: aSeq }),
+      ]);
+      // success: nothing else to do (UI already reflects it)
+    } catch (e: any) {
+      // rollback: put sequences back and resort
+      setStops(prev => {
+        const next = [...prev];
+        const ai = next.findIndex(s => s.id === a.id);
+        const bi = next.findIndex(s => s.id === b.id);
+        if (ai >= 0) next[ai] = { ...next[ai], sequence: aSeq };
+        if (bi >= 0) next[bi] = { ...next[bi], sequence: bSeq };
+        return next.sort((x, y) => x.sequence - y.sequence);
+      });
+      Alert.alert(
+        'Reorder failed',
+        e?.message || 'Unable to update stop order.',
+      );
+    }
+  };
+
   const moveUp = (index: number) => {
     if (index === 0) return;
-    setStops(prev => {
-      const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      return next.map((x, i) => ({ ...x, sequence: i + 1 }));
-    });
+    swapStops(index, index - 1);
   };
+
   const moveDown = (index: number) => {
     if (index === stops.length - 1) return;
-    setStops(prev => {
-      const next = [...prev];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-      return next.map((x, i) => ({ ...x, sequence: i + 1 }));
-    });
+    swapStops(index, index + 1);
   };
 
   const persistOrder = async () => {
@@ -240,9 +288,16 @@ export default function RouteDraftScreen() {
     }
     setPublishing(true);
     try {
-      await api.post(`/routes/${routeId}/publish`, { status: 'scheduled' });
-      Alert.alert('Published', 'Route scheduled!');
-      nav.goBack();
+      const resp = await publishRouteWithStops(routeId, {
+        status: 'dispatched',
+      });
+
+      if (resp.success) {
+        Alert.alert('Published', 'Route scheduled!');
+        nav.goBack();
+      } else {
+        Alert.alert('Error', resp.error?.message ?? 'Failed to publish route');
+      }
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Failed to publish route');
     } finally {
@@ -388,6 +443,13 @@ export default function RouteDraftScreen() {
         }
         renderItem={({ item, index }) => {
           console.log('item', item);
+          const upDisabled =
+            index === 0 || !canMoveStop(item) || !canMoveStop(stops[index - 1]);
+
+          const downDisabled =
+            index === stops.length - 1 ||
+            !canMoveStop(item) ||
+            !canMoveStop(stops[index + 1]);
           return (
             <View style={[tw`px-4`]}>
               <View
@@ -491,7 +553,7 @@ export default function RouteDraftScreen() {
                   <View style={tw`flex-row`}>
                     <TouchableOpacity
                       onPress={() => moveUp(index)}
-                      disabled={index === 0}
+                      disabled={upDisabled}
                       style={[
                         tw`px-2 py-2 rounded-xl mr-2`,
                         {
@@ -504,7 +566,7 @@ export default function RouteDraftScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => moveDown(index)}
-                      disabled={index === stops.length - 1}
+                      disabled={downDisabled}
                       style={[
                         tw`px-2 py-2 rounded-xl`,
                         {

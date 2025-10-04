@@ -32,3 +32,14 @@ export const getRouteById = async (routeId: number) => {
   }>(`/routes/get-route-by-id/${routeId}`);
   return res.data;
 };
+
+export const publishRouteWithStops = async (routeId: number, payload: any) => {
+  const res = await api.put<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/routes/publish-route-with-stops/${routeId}`, payload);
+  console.log('res', res);
+  return res.data;
+};

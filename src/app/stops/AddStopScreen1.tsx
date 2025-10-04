@@ -93,6 +93,7 @@ export default function AddStopScreen1() {
   const { colors } = useTheme();
   const { business } = useSession();
   const { routeId, stopsCount } = params as RouteParams;
+  console.log('stopsCount', stopsCount);
 
   // Stop type
   const [stopType, setStopType] = useState<string>('Delivery');
@@ -337,6 +338,7 @@ export default function AddStopScreen1() {
       setCreatingBase(true);
 
       // Use your business/HQ info when available. Fallbacks are safe no-ops.
+      console.log('stop sequence', stopsCount, stopsCount + 1);
       const payload = {
         route_id: routeId,
         business_id: business.id,
@@ -357,7 +359,7 @@ export default function AddStopScreen1() {
         contact_phone: business.phone ?? '',
         contact_email: business.email ?? '',
         business_name: 'Base',
-        sequence: stopsCount + 1, // append
+        sequence: 0, // append
       };
 
       const res = await createStop(payload);
@@ -389,6 +391,7 @@ export default function AddStopScreen1() {
       setCreatingLunch(true);
 
       // Use your business/HQ info when available. Fallbacks are safe no-ops.
+      console.log('stop sequence', stopsCount, stopsCount + 1);
       const payload = {
         route_id: routeId,
         business_id: business.id,
@@ -409,7 +412,7 @@ export default function AddStopScreen1() {
         contact_phone: '',
         contact_email: '',
         business_name: 'Lunch',
-        sequence: stopsCount + 1, // append
+        sequence: 0, // append
         is_lunch: true,
         expected_duration: lunchMinutes,
         auto_trigger: lunchAuto,
@@ -475,6 +478,7 @@ export default function AddStopScreen1() {
 
     await AsyncStorage.setItem('step1Payload', JSON.stringify(currentPayload));
 
+    console.log('stop count payload', stopsCount);
     nav.navigate('AddStopScreen2', {
       routeId,
       stopsCount,

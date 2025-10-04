@@ -82,3 +82,14 @@ export const deleteStop = async (stopId: number) => {
   console.log('deleteStop res', res.data);
   return res.data;
 };
+
+export const updateStopSequence = async (stopId: number, payload: any) => {
+  const res = await api.put<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/stops/update-stop/${stopId}`, payload);
+  console.log('res', res);
+  return res.data;
+};
