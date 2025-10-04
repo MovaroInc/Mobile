@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../shared/hooks/useTheme';
-import tw from 'twrnc';
+import tw, { style } from 'twrnc';
 import AuthInput from '../../shared/components/inputs/AuthInput';
 import AuthBotton from '../../shared/components/buttons/AuthBotton';
 import SecondaryAuthButton from '../../shared/components/buttons/SecondaryAuthButton';
@@ -95,37 +95,33 @@ const LoginScreen = () => {
   };
 
   return (
-    <SafeAreaView style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
-      <View style={tw`flex-1 items-center justify-between`}>
-        {/* Accent bar */}
-        <View style={tw`w-full flex-1 items-center justify-start`}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* Split screen: top content + bottom footer */}
+      <View style={tw`flex-1 justify-between`}>
+        {/* TOP CONTENT (no flex-1 here so it stays at the top) */}
+        <View style={tw`w-full items-center`}>
+          {/* Accent bar */}
           <View
             style={[
-              tw`w-1/3 h-2 mt-6 rounded-full`,
+              tw`w-1/3 h-2 rounded-full mt-2`,
               { backgroundColor: colors.brand.primary },
             ]}
           />
 
           {/* Title */}
           <Text
-            style={[
-              tw`mt-8 text-4xl font-semibold`,
-              { color: colors.text }, // <-- set text color, not background
-            ]}
+            style={[tw`mt-6 text-4xl font-semibold`, { color: colors.text }]}
           >
             Movaro
           </Text>
-          <Text
-            style={[
-              tw`mt-1 text-base`,
-              { color: colors.text }, // <-- set text color, not background
-            ]}
-          >
+          <Text style={[tw`mt-1 text-base`, { color: colors.text }]}>
             Smarter Routes. Simpler Logistics.
           </Text>
+
+          {/* Inputs */}
           <View
             style={[
-              tw`w-11/12 rounded-3 mt-8 border`,
+              tw`w-11/12 mt-8 rounded-2xl border`,
               { borderColor: colors.border, backgroundColor: colors.card },
             ]}
           >
@@ -152,33 +148,38 @@ const LoginScreen = () => {
               isValid={true}
             />
           </View>
-          <View style={tw`w-11/12 flex items-end mt-3`}>
+
+          {/* Forgot + CTA */}
+          <View style={tw`w-11/12 items-end mt-3`}>
             <TouchableOpacity onPress={() => {}}>
               <Text style={[tw`text-sm mr-2`, { color: colors.text }]}>
                 Forgot Password?
               </Text>
             </TouchableOpacity>
           </View>
+
           <View style={tw`w-11/12`}>
             <AuthBotton label="Login" loading={loading} onPress={handleLogin} />
           </View>
+
+          {/* Divider */}
           <View style={tw`w-8/12 flex-row items-center justify-between mt-4`}>
             <View
               style={[
-                tw`w-1/3 h-.5 rounded-full`,
+                tw`w-1/3 h-[1px] rounded-full`,
                 { backgroundColor: colors.border },
               ]}
             />
-            <View>
-              <Text style={[tw`text-sm`, { color: colors.text }]}>OR</Text>
-            </View>
+            <Text style={[tw`text-sm`, { color: colors.text }]}>OR</Text>
             <View
               style={[
-                tw`w-1/3 h-.5 rounded-full`,
+                tw`w-1/3 h-[1px] rounded-full`,
                 { backgroundColor: colors.border },
               ]}
             />
           </View>
+
+          {/* Secondary actions */}
           <View>
             <SecondaryAuthButton
               label="Signup as Business"
@@ -188,20 +189,20 @@ const LoginScreen = () => {
             <SecondaryAuthButton
               label="Signup as Driver"
               loading={false}
-              onPress={() => {}}
+              onPress={handleRedirectDriver}
             />
           </View>
         </View>
-        <View
-          style={tw`w-8/12 flex-row items-center justify-between mt-4 mb-4`}
-        >
+
+        {/* BOTTOM FOOTER (pinned to bottom by justify-between) */}
+        <View style={tw`px-6 pb-4`}>
           <Text style={[tw`text-xs text-center`, { color: colors.text }]}>
             By continuing, you agree to Movaro Inc. Terms of Service and Privacy
             Policy.
           </Text>
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 

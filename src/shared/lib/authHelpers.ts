@@ -14,11 +14,12 @@ export async function createUserAccount(
   business_id: number,
   customer_id: number,
   employee_id: number,
-  subsubscriptionId: number,
+  subscription_id: number,
   profilePicture: string,
   role: string,
   status: string,
 ): Promise<{ success: boolean; data: any; error: any; message: string }> {
+  console.log('subsubscriptionId passed', subscription_id);
   const { success, data, error, message } = await api.post<{
     success: boolean;
     data: any | null;
@@ -34,12 +35,12 @@ export async function createUserAccount(
     latitude,
     longitude,
     business_id,
-    customer_id,
     employee_id,
-    subsubscriptionId,
+    subscription_id,
     profilePicture,
     role,
     status,
+    update_at: new Date().toISOString(),
   });
   return { success, data, error, message };
 }
@@ -116,6 +117,7 @@ export async function createEmployeeAccount(
   notes: string | null,
   tags: string | null,
   settings: any,
+  availability: string,
 ): Promise<{ success: boolean; data: any; error: any; message: string }> {
   const { success, data, error, message } = await api.post<{
     success: boolean;
@@ -142,6 +144,7 @@ export async function createEmployeeAccount(
     notes,
     tags,
     settings,
+    availability,
   });
   return { success, data, error, message };
 }
@@ -252,5 +255,23 @@ const attemptLogin = async (username: string, password: string) => {
     message: string | null;
   }>('/users/login', { username, password });
 
+  return { success, data, error, message };
+};
+
+export const updateProfileWithEmployeeId = async (
+  business_id: number,
+  employee_id: number,
+  id: number,
+) => {
+  const { success, data, error, message } = await api.post<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>('/users/update-profile', {
+    business_id,
+    employee_id,
+    id,
+  });
   return { success, data, error, message };
 };

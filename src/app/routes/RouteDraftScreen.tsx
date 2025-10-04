@@ -175,8 +175,7 @@ export default function RouteDraftScreen() {
     nav.navigate('AddStopScreen1', { routeId, stopsCount: stops.length });
   };
   const openEdit = (s: Stop) => {
-    setEditingStop(s);
-    setModalOpen(true);
+    nav.navigate('StopSummaryEditScreen', { stop: s });
   };
 
   const onDelete = (s: Stop) => {

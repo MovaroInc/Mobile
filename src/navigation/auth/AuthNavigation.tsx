@@ -9,6 +9,7 @@ import ValidateNotificationsScreen from '../../app/auth/ValidateNotificationsScr
 import ValidateLocationScreen from '../../app/auth/ValidateLocationScreen';
 import AcceptingLegalScreen from '../../app/auth/AcceptingLegalScreen';
 import CreatingProfileScreen from '../../app/auth/CreatingProfileScreen';
+import DriverSignupScreen from '../../app/drivers/DriverSignupScreen';
 
 type AuthParamList = {
   Login: undefined;
@@ -19,6 +20,7 @@ type AuthParamList = {
   ValidateLocation: undefined;
   AcceptingLegal: undefined;
   CreatingProfile: undefined;
+  DriverSignup: undefined;
 };
 const Stack = createStackNavigator<AuthParamList>();
 
@@ -45,6 +47,7 @@ export default function AuthNavigation() {
       />
       <Stack.Screen name="AcceptingLegal" component={AcceptingLegalScreen} />
       <Stack.Screen name="CreatingProfile" component={CreatingProfileScreen} />
+      <Stack.Screen name="DriverSignup" component={DriverSignupScreen} />
     </Stack.Navigator>
   );
 }

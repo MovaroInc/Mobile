@@ -217,6 +217,7 @@ const CreatingProfileScreen = () => {
       null,
       null,
       {},
+      'available',
     );
     if (!data.success) {
       setErrors(es => ({

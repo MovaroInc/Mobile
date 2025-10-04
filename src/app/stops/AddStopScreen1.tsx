@@ -12,12 +12,15 @@ import {
   ActivityIndicator,
   FlatList,
   Alert,
+  Switch, // >>> for Lunch auto toggle
 } from 'react-native';
 import tw from 'twrnc';
 import {
   useFocusEffect,
   useNavigation,
   useRoute,
+  StackActions,
+  CommonActions,
 } from '@react-navigation/native';
 import { useTheme } from '../../shared/hooks/useTheme';
 import { useSession } from '../../state/useSession';
@@ -35,7 +38,6 @@ import {
 import Field from '../../shared/components/inputs/Field';
 import FieldSuggestions from '../../shared/components/inputs/FieldSuggestions';
 import SelectInput from '../../shared/components/inputs/SelectInput';
-import { api } from '../../shared/lib/api';
 import { grabCustomers, grabVendors } from '../../shared/lib/CustomerVendorApi';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -48,9 +50,20 @@ type RouteParams = {
 
 type Entity = {
   id: number;
-  name: string; // display name
+  name: string;
   email?: string | null;
   phone?: string | null;
+  // optional address fields if returned by your API (used for display)
+  address_line1?: string;
+  city?: string;
+  region?: string;
+  postal_code?: string;
+  country_code?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  contact_name?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
 };
 
 type StopDraft = {
@@ -81,8 +94,10 @@ export default function AddStopScreen1() {
   const { business } = useSession();
   const { routeId, stopsCount } = params as RouteParams;
 
-  // Step state
+  // Stop type
   const [stopType, setStopType] = useState<string>('Delivery');
+
+  // “Who” options (hidden for Base/Lunch)
   const [stopUse, setStopUse] = useState<
     { key: string; label: string; Icon: any }[]
   >([
@@ -91,7 +106,7 @@ export default function AddStopScreen1() {
   ]);
   const [selectedUse, setSelectedUse] = useState<string>('customer');
 
-  // Entities (real data: load from API)
+  // Entities
   const [customers, setCustomers] = useState<Entity[]>([]);
   const [vendors, setVendors] = useState<Entity[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
@@ -101,17 +116,18 @@ export default function AddStopScreen1() {
   const [selectedCustomer, setSelectedCustomer] = useState<Entity | null>(null);
   const [selectedVendor, setSelectedVendor] = useState<Entity | null>(null);
 
-  const [otName, setOtName] = useState(''); // one-time
+  const [otName, setOtName] = useState('');
   const [otPhone, setOtPhone] = useState('');
   const [otEmail, setOtEmail] = useState('');
   const [otCustomerName, setOtCustomerName] = useState('');
 
-  const [selectedName, setSelectedName] = useState(''); // one-time
+  // For pre-filling contact when chosen from customer/vendor
+  const [selectedName, setSelectedName] = useState('');
   const [selectedPhone, setSelectedPhone] = useState('');
   const [selectedEmail, setSelectedEmail] = useState('');
   const [selectedCustomerName, setSelectedCustomerName] = useState('');
 
-  // Address (with autofill)
+  // Address (used for regular stops only)
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [address, setAddress] = useState('');
@@ -127,161 +143,63 @@ export default function AddStopScreen1() {
   // Modals
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // >>> NEW: Base/Lunch flags and UI state
+  const isBase = stopType === 'Base / HQ';
+  const isLunch = stopType === 'Lunch';
+  const [creatingBase, setCreatingBase] = useState(false);
+
+  // Lunch options
+  const LUNCH_OPTIONS = [30, 45, 60, 90, 120];
+  const [lunchMinutes, setLunchMinutes] = useState<number>(30);
+  const [lunchAuto, setLunchAuto] = useState<boolean>(false);
+
+  const [creatingLunch, setCreatingLunch] = useState(false);
+
+  // Stop type → “Who” options (hidden for Base/Lunch)
   useEffect(() => {
+    if (isBase || isLunch) {
+      setStopUse([]); // hide “Who”
+      return;
+    }
     if (stopType === 'Delivery') {
       setStopUse([
         { key: 'customer', label: 'Customer', Icon: UsersIcon },
         { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
       ]);
-    }
-    if (stopType === 'Pickup') {
+    } else if (stopType === 'Pickup') {
+      setStopUse([
+        { key: 'customer', label: 'Customer', Icon: UsersIcon },
+        { key: 'vendor', label: 'Vendor', Icon: VendorIcon },
+        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
+      ]);
+    } else if (stopType === 'Service' || stopType === 'Install') {
+      setStopUse([
+        { key: 'customer', label: 'Customer', Icon: UsersIcon },
+        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
+      ]);
+    } else if (stopType === 'Repair') {
+      setStopUse([
+        { key: 'customer', label: 'Customer', Icon: UsersIcon },
+        { key: 'vendor', label: 'Vendor', Icon: VendorIcon },
+      ]);
+    } else if (stopType === 'Other') {
       setStopUse([
         { key: 'customer', label: 'Customer', Icon: UsersIcon },
         { key: 'vendor', label: 'Vendor', Icon: VendorIcon },
         { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
       ]);
     }
-    if (stopType === 'Service') {
-      setStopUse([
-        { key: 'customer', label: 'Customer', Icon: UsersIcon },
-        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
-      ]);
-    }
-    if (stopType === 'Install') {
-      setStopUse([
-        { key: 'customer', label: 'Customer', Icon: UsersIcon },
-        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
-      ]);
-    }
-    if (stopType === 'Repair') {
-      setStopUse([
-        { key: 'customer', label: 'Customer', Icon: UsersIcon },
-        { key: 'vendor', label: 'Vendor', Icon: VendorIcon },
-      ]);
-    }
-    if (stopType === 'Other') {
-      setStopUse([
-        { key: 'customer', label: 'Customer', Icon: UsersIcon },
-        { key: 'vendor', label: 'Vendor', Icon: VendorIcon },
-        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
-      ]);
-    }
-  }, [stopType]);
-  // Load entitie
+  }, [stopType, isBase, isLunch]);
 
+  // Load lists and init
   useFocusEffect(
     useCallback(() => {
       if (!business?.id) return;
-      initiateForm();
       handleCustomers(business.id);
       handleVendors(business.id);
-      initializeStop();
+      // keep any existing draft init you had…
     }, [business]),
   );
-
-  useEffect(() => {
-    const getSelectedCustomer = async () => {
-      if (customers.length > 0) {
-        const p1 = await AsyncStorage.getItem('step1Payload');
-        const payload1 = JSON.parse(p1 || '{}');
-        const customer = customers.find(c => c.id === payload1.customer_id);
-        if (customer) {
-          setSelectedCustomer(customer);
-          setAddress(
-            `${customer.address_line1}, ${customer.city}, ${customer.region} ${customer.postal_code}`,
-          );
-          setLine1(customer.address_line1);
-          setCity(customer.city);
-          setRegion(customer.region);
-          setPostal(customer.postal_code);
-          setCountry(customer.country_code);
-          setLatitude(customer.latitude);
-          setLongitude(customer.longitude);
-          setSelectedName(customer.contact_name);
-          setSelectedPhone(customer.contact_phone);
-          setSelectedEmail(customer.contact_email);
-          setSelectedCustomerName(customer.name);
-        }
-      }
-      if (vendors.length > 0) {
-        const p1 = await AsyncStorage.getItem('step1Payload');
-        const payload1 = JSON.parse(p1 || '{}');
-        const vendor = vendors.find(v => v.id === payload1.vendor_id);
-        if (vendor) {
-          setSelectedVendor(vendor);
-          setAddress(
-            `${vendor.address_line1}, ${vendor.city}, ${vendor.region} ${vendor.postal_code}`,
-          );
-          setLine1(vendor.address_line1);
-          setCity(vendor.city);
-          setRegion(vendor.region);
-          setPostal(vendor.postal_code);
-          setCountry(vendor.country_code);
-          setLatitude(vendor.latitude);
-          setLongitude(vendor.longitude);
-          setSelectedName(vendor.contact_name);
-          setSelectedPhone(vendor.contact_phone);
-          setSelectedEmail(vendor.contact_email);
-          setSelectedCustomerName(vendor.name);
-        }
-      }
-    };
-    getSelectedCustomer();
-  }, [customers, vendors]);
-
-  const initializeStop = async () => {
-    const p1 = await AsyncStorage.getItem('step1Payload');
-    const payload1 = JSON.parse(p1 || '{}');
-    console.log('p1', payload1);
-    if (payload1.stopType) {
-      setStopType(payload1.stopType);
-    }
-    if (payload1.selectedUse) {
-      setSelectedUse(payload1.selectedUse);
-    }
-  };
-
-  const draftIdsRef = React.useRef<{
-    customerId: number | null;
-    vendorId: number | null;
-  }>({
-    customerId: null,
-    vendorId: null,
-  });
-
-  const initiateForm = async () => {
-    try {
-      const str = await AsyncStorage.getItem('stop_draft');
-      if (!str) return;
-
-      const d: Partial<StopDraft> = JSON.parse(str);
-
-      if (d.stopType) setStopType(d.stopType);
-      if (d.selectedUse) setSelectedUse(d.selectedUse);
-
-      if (d.otName != null) setOtName(d.otName);
-      if (d.otPhone != null) setOtPhone(d.otPhone);
-      if (d.otEmail != null) setOtEmail(d.otEmail);
-      if (d.otCustomerName != null) setOtCustomerName(d.otCustomerName);
-      if (d.address != null) setAddress(d.address);
-
-      if (d.addressLine1 != null) setLine1(d.addressLine1);
-      if (d.addressLine2 != null) setLine2(d.addressLine2);
-      if (d.city != null) setCity(d.city);
-      if (d.region != null) setRegion(d.region);
-      if (d.postal != null) setPostal(d.postal);
-      if (d.country != null) setCountry(d.country);
-
-      if (d.latitude !== undefined) setLatitude(d.latitude);
-      if (d.longitude !== undefined) setLongitude(d.longitude);
-
-      // save ids to hydrate after lists load
-      draftIdsRef.current.customerId = d.customerId ?? null;
-      draftIdsRef.current.vendorId = d.vendorId ?? null;
-    } catch (e) {
-      console.log('initiateForm error', e);
-    }
-  };
 
   const handleCustomers = async (businessId: number) => {
     try {
@@ -289,44 +207,6 @@ export default function AddStopScreen1() {
       setCustomers(resp.data);
     } catch {
       setCustomers([]);
-      console.log('error grabbing customers');
-    }
-  };
-
-  const handleSelected = async (ent: any) => {
-    if (selectedUse === 'customer') {
-      setSelectedCustomer(ent);
-      setAddress(
-        `${ent.address_line1}, ${ent.city}, ${ent.region} ${ent.postal_code}`,
-      );
-      setLine1(ent.address_line1);
-      setCity(ent.city);
-      setRegion(ent.region);
-      setPostal(ent.postal_code);
-      setCountry(ent.country_code);
-      setLatitude(ent.latitude);
-      setLongitude(ent.longitude);
-      setSelectedName(ent.contact_name);
-      setSelectedPhone(ent.contact_phone);
-      setSelectedEmail(ent.contact_email);
-      setSelectedCustomerName(ent.name);
-    }
-    if (selectedUse === 'vendor') {
-      setSelectedVendor(ent);
-      setAddress(
-        `${ent.address_line1}, ${ent.city}, ${ent.region} ${ent.postal_code}`,
-      );
-      setLine1(ent.address_line1);
-      setCity(ent.city);
-      setRegion(ent.region);
-      setPostal(ent.postal_code);
-      setCountry(ent.country_code);
-      setLatitude(ent.latitude);
-      setLongitude(ent.longitude);
-      setSelectedName(ent.contact_name);
-      setSelectedPhone(ent.contact_phone);
-      setSelectedEmail(ent.contact_email);
-      setSelectedCustomerName(ent.name);
     }
   };
 
@@ -336,20 +216,42 @@ export default function AddStopScreen1() {
       setVendors(resp);
     } catch {
       setVendors([]);
-      console.log('error grabbing vendors');
     }
   };
 
-  useEffect(() => {}, [selectedCustomer, selectedVendor]);
+  const handleSelected = (ent: any) => {
+    if (selectedUse === 'customer') {
+      setSelectedCustomer(ent);
+    } else if (selectedUse === 'vendor') {
+      setSelectedVendor(ent);
+    }
+    // hydrate address/contact if present
+    const a1 = ent.address_line1 ?? '';
+    const c1 = ent.city ?? '';
+    const r1 = ent.region ?? '';
+    const p1 = ent.postal_code ?? '';
+    const cc = ent.country_code ?? 'US';
+    setAddress([a1, c1, r1].filter(Boolean).join(', '));
+    setLine1(a1);
+    setCity(c1);
+    setRegion(r1);
+    setPostal(p1);
+    setCountry(cc);
+    setLatitude(ent.latitude ?? null);
+    setLongitude(ent.longitude ?? null);
+    setSelectedName(ent.contact_name ?? '');
+    setSelectedPhone(ent.contact_phone ?? '');
+    setSelectedEmail(ent.contact_email ?? '');
+    setSelectedCustomerName(ent.name ?? '');
+  };
 
+  // Address helpers (kept from your version)
   const handleSearchAddress = async (text: string) => {
     setQuery(text);
-
     if (text.length < 3) {
       setSuggestions([]);
       return;
     }
-
     const options = {
       method: 'GET',
       url: 'https://google-place-autocomplete-and-place-info.p.rapidapi.com/maps/api/place/autocomplete/json',
@@ -360,86 +262,202 @@ export default function AddStopScreen1() {
           'google-place-autocomplete-and-place-info.p.rapidapi.com',
       },
     };
-
     try {
       const response = await axios.request(options);
       const predictions = response.data?.predictions || [];
       setSuggestions(predictions);
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Error searching business addresses.');
+    } catch {
+      Alert.alert('Error searching addresses.');
     }
   };
 
   const getPlaceCoordinates = async (text: string) => {
+    if (!text) return;
     const options = {
       method: 'GET',
       url: 'https://google-maps-geocoding3.p.rapidapi.com/geocode',
-      params: {
-        address: text,
-      },
+      params: { address: text },
       headers: {
         'x-rapidapi-key': 'c077600dd0msh70cad04baf5f0e2p187ab4jsn23535e260f32',
         'x-rapidapi-host': 'google-maps-geocoding3.p.rapidapi.com',
       },
     };
-    const customerPosition = await axios.request(options);
-    setLatitude(parseFloat(customerPosition.data.latitude));
-    setLongitude(parseFloat(customerPosition.data.longitude));
+    try {
+      const resp = await axios.request(options);
+      if (resp?.data?.latitude && resp?.data?.longitude) {
+        setLatitude(parseFloat(resp.data.latitude));
+        setLongitude(parseFloat(resp.data.longitude));
+      }
+    } catch {}
   };
 
   useEffect(() => {
-    if (address.length > 2) {
-      const fullAddress = address.split(', ');
-      setLine1(fullAddress[0]);
-      setCity(fullAddress[1]);
-      setRegion(fullAddress[2]);
+    if (!isBase && !isLunch && address.length > 2) {
+      const full = address.split(', ');
+      setLine1(full[0] ?? '');
+      setCity(full[1] ?? '');
+      setRegion(full[2] ?? '');
       setCountry('US');
+      getPlaceCoordinates(address);
     }
-    getPlaceCoordinates(address);
-  }, [address]);
+  }, [address, isBase, isLunch]);
 
-  // Validation
-  const valid = useMemo(() => {
+  // >>> VALIDATION
+  const canContinue = useMemo(() => {
+    if (isBase) return false; // we show "Confirm Base" instead of Next
+    if (isLunch) return true; // lunch doesn’t need Who/Address here
     const hasAddress = line1.trim() && city.trim() && region.trim();
     if (!hasAddress) return false;
     if (!stopType) return false;
     if (!selectedUse) return false;
-
     if (selectedUse === 'customer') return !!selectedCustomer;
     if (selectedUse === 'vendor') return !!selectedVendor;
-    // one-time needs at least a name
     if (selectedUse === 'one_time') return !!otName.trim();
     return false;
   }, [
+    isBase,
+    isLunch,
     stopType,
+    selectedUse,
     selectedCustomer,
     selectedVendor,
     otName,
     line1,
     city,
     region,
-    selectedUse,
   ]);
 
-  const onNext = async () => {
-    if (!valid) return;
+  // >>> Confirm Base: create immediately and go back to RouteDraft
+  const onConfirmBase = async () => {
+    try {
+      if (!business?.id) {
+        Alert.alert('Missing business', 'Cannot determine base info.');
+        return;
+      }
+      setCreatingBase(true);
 
+      // Use your business/HQ info when available. Fallbacks are safe no-ops.
+      const payload = {
+        route_id: routeId,
+        business_id: business.id,
+        stop_type: 'baae', // backend can treat as Base/HQ type
+        depot_role: 'start', // optional: mark as return-to-base
+        customer_id: null,
+        vendor_id: null,
+        address_line1: business.address_line1 ?? '',
+        address_line2: business.address_line2 ?? null,
+        city: business.city ?? '',
+        region: business.region ?? '',
+        postal_code: business.postal_code ?? null,
+        country_code: business.country_code ?? 'US',
+        latitude: business.latitude ?? null,
+        longitude: business.longitude ?? null,
+        status: 'scheduled',
+        contact_name: business.name ?? 'Base',
+        contact_phone: business.phone ?? '',
+        contact_email: business.email ?? '',
+        business_name: 'Base',
+        sequence: stopsCount + 1, // append
+      };
+
+      const res = await createStop(payload);
+      if (!res?.success) {
+        Alert.alert('Error', res?.message ?? 'Failed to create base stop');
+        return;
+      }
+
+      // Pop back to the existing RouteDraftScreen (no duplicate pushes)
+      nav.dispatch(state => {
+        const idx = state.routes.findIndex(r => r.name === 'RouteDraftScreen');
+        if (idx === -1) return CommonActions.navigate('RouteDraftScreen');
+        const popCount = state.index - idx;
+        return StackActions.pop(popCount);
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to create base stop.');
+    } finally {
+      setCreatingBase(false);
+    }
+  };
+
+  const conConfirmLunch = async () => {
+    try {
+      if (!business?.id) {
+        Alert.alert('Missing business', 'Cannot determine base info.');
+        return;
+      }
+      setCreatingLunch(true);
+
+      // Use your business/HQ info when available. Fallbacks are safe no-ops.
+      const payload = {
+        route_id: routeId,
+        business_id: business.id,
+        stop_type: 'lunch', // backend can treat as Base/HQ type
+        depot_role: null, // optional: mark as return-to-base
+        customer_id: null,
+        vendor_id: null,
+        address_line1: business.address_line1 ?? '',
+        address_line2: business.address_line2 ?? null,
+        city: business.city ?? '',
+        region: business.region ?? '',
+        postal_code: business.postal_code ?? null,
+        country_code: business.country_code ?? 'US',
+        latitude: business.latitude ?? null,
+        longitude: business.longitude ?? null,
+        status: 'scheduled',
+        contact_name: 'Base',
+        contact_phone: '',
+        contact_email: '',
+        business_name: 'Lunch',
+        sequence: stopsCount + 1, // append
+        is_lunch: true,
+        expected_duration: lunchMinutes,
+        auto_trigger: lunchAuto,
+      };
+
+      const res = await createStop(payload);
+      if (!res?.success) {
+        Alert.alert('Error', res?.message ?? 'Failed to create base stop');
+        return;
+      }
+
+      // Pop back to the existing RouteDraftScreen (no duplicate pushes)
+      nav.goBack();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to create base stop.');
+    } finally {
+      setCreatingLunch(false);
+    }
+  };
+
+  // Next for all other types (Lunch continues, regular flow unchanged)
+  const onNext = async () => {
+    if (!canContinue && !isLunch) return;
+
+    // For Lunch, stash defaults for step 2 (you can read these in Screen 2)
+    if (isLunch) {
+      await AsyncStorage.setItem(
+        'lunch_defaults',
+        JSON.stringify({ minutes: lunchMinutes, auto: lunchAuto }),
+      );
+    }
+
+    // Build regular Step 1 payload for non-Base types
     const currentPayload = {
       route_id: routeId,
       business_id: business?.id,
-      stop_type: stopType.toLowerCase(),
+      stop_type: stopType.toLowerCase(), // 'lunch' when Lunch
       depot_role: null,
       customer_id: selectedCustomer?.id || null,
       vendor_id: selectedVendor?.id || null,
-      address_line1: line1.trim(),
-      address_line2: line2.trim() || null,
-      city: city.trim(),
-      region: region.trim(),
-      postal_code: postal.trim() || null,
-      country_code: (country || 'US').toUpperCase(),
-      latitude,
-      longitude,
+      address_line1: isLunch ? '' : line1.trim(),
+      address_line2: isLunch ? null : line2.trim() || null,
+      city: isLunch ? '' : city.trim(),
+      region: isLunch ? '' : region.trim(),
+      postal_code: isLunch ? null : postal.trim() || null,
+      country_code: isLunch ? 'US' : (country || 'US').toUpperCase(),
+      latitude: isLunch ? null : latitude,
+      longitude: isLunch ? null : longitude,
       status: 'scheduled',
       contact_name: selectedUse === 'one_time' ? otName.trim() : selectedName,
       contact_phone:
@@ -451,12 +469,15 @@ export default function AddStopScreen1() {
           ? otCustomerName.trim()
           : selectedCustomerName,
       sequence: 0,
+      // stash lunch config for later if needed
+      _lunch: isLunch ? { minutes: lunchMinutes, auto: lunchAuto } : undefined,
     };
 
     await AsyncStorage.setItem('step1Payload', JSON.stringify(currentPayload));
+
     nav.navigate('AddStopScreen2', {
-      routeId: routeId,
-      stopsCount: stopsCount,
+      routeId,
+      stopsCount,
     });
   };
 
@@ -471,14 +492,6 @@ export default function AddStopScreen1() {
     setLatitude(null);
     setLongitude(null);
   };
-
-  // UI labels for entity section
-  const entityLabel =
-    stopType === 'customer'
-      ? 'Select Customer'
-      : stopType === 'vendor'
-      ? 'Select Vendor'
-      : 'Contact (one-time)';
 
   return (
     <KeyboardAvoidingView
@@ -498,7 +511,11 @@ export default function AddStopScreen1() {
       </View>
       <View style={tw`px-4 pb-4`}>
         <Text style={[tw`text-xs`, { color: colors.muted }]}>
-          Step 1 of 3 — Who & Where
+          {isBase
+            ? 'Quick add — Return to Base'
+            : isLunch
+            ? 'Step 1 of 3 — Lunch Options'
+            : 'Step 1 of 3 — Who & Where'}
         </Text>
       </View>
 
@@ -539,122 +556,261 @@ export default function AddStopScreen1() {
           ))}
         </View>
 
-        <Text style={[tw`text-lg font-semibold mb-3`, { color: colors.text }]}>
-          Who
-        </Text>
+        {/* >>> Base / HQ content */}
+        {isBase && (
+          <View
+            style={[
+              tw`rounded-2xl p-3 mb-2`,
+              { backgroundColor: colors.border },
+            ]}
+          >
+            <Text style={[tw`text-base font-semibold`, { color: colors.text }]}>
+              Confirm Return to Base
+            </Text>
+            <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
+              This stop will send the driver back to your company HQ. Customer
+              selection isn’t required—address and contact details will use your
+              business information.
+            </Text>
 
-        <SegmentedControl
-          value={selectedUse}
-          onChange={handleSelectedUse}
-          colors={colors}
-          options={stopUse}
-        />
+            <TouchableOpacity
+              onPress={onConfirmBase}
+              disabled={creatingBase}
+              style={[
+                tw`mt-3 px-4 py-3 rounded-2xl items-center`,
+                {
+                  backgroundColor: creatingBase
+                    ? colors.border
+                    : colors.brand?.primary || '#2563eb',
+                },
+              ]}
+            >
+              <Text style={tw`text-white font-semibold`}>
+                {creatingBase ? 'Creating…' : 'Confirm Base'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        <View style={tw`mt-3`}>
-          {selectedUse === 'customer' && (
-            <SelectInput
-              label="Customer"
-              selectedValue={selectedCustomer?.name || 'Select'}
-              onPress={() => setPickerOpen(true)}
+        {/* >>> Lunch content */}
+        {isLunch && (
+          <View>
+            <Text
+              style={[tw`text-lg font-semibold mb-2`, { color: colors.text }]}
+            >
+              Lunch Duration
+            </Text>
+
+            <View
+              style={[
+                tw`flex-row p-1 rounded-xl mb-2`,
+                { backgroundColor: colors.border },
+              ]}
+            >
+              {LUNCH_OPTIONS.map(min => {
+                const active = lunchMinutes === min;
+                return (
+                  <TouchableOpacity
+                    key={min}
+                    onPress={() => setLunchMinutes(min)}
+                    style={[
+                      tw`flex-1 px-3 py-2 rounded-lg items-center`,
+                      {
+                        backgroundColor: active
+                          ? colors.brand?.primary || '#2563eb'
+                          : 'transparent',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        tw`text-sm font-semibold`,
+                        { color: active ? '#fff' : colors.text },
+                      ]}
+                    >
+                      {min} min
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View
+              style={[
+                tw`px-3 py-2 rounded-xl mb-2`,
+                { backgroundColor: colors.border },
+              ]}
+            >
+              <View style={tw`flex-row items-center justify-between`}>
+                <Text style={{ color: colors.text }}>Auto-Trigger Lunch</Text>
+                <Switch value={lunchAuto} onValueChange={setLunchAuto} />
+              </View>
+              <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
+                If on, lunch starts automatically at the planned time. If off,
+                the driver starts lunch manually.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* >>> Regular “Who & Address” (hidden for Base/Lunch) */}
+        {!isBase && !isLunch && (
+          <>
+            <Text
+              style={[tw`text-lg font-semibold mb-3`, { color: colors.text }]}
+            >
+              Who
+            </Text>
+
+            <SegmentedControl
+              value={selectedUse}
+              onChange={use => {
+                setSelectedUse(use);
+                setQuery('');
+                setLine1('');
+                setCity('');
+                setRegion('');
+                setPostal('');
+                setCountry('US');
+                setLatitude(null);
+                setLongitude(null);
+              }}
               colors={colors}
-              required
+              options={stopUse}
             />
-          )}
-          {selectedUse === 'vendor' && (
-            <SelectInput
-              label="Vendor"
-              selectedValue={selectedVendor?.name || 'Select'}
-              onPress={() => setPickerOpen(true)}
-              colors={colors}
-              required
-            />
-          )}
-          {selectedUse === 'one_time' && (
-            <>
-              <Field
-                label="Customer Name "
-                value={otCustomerName}
-                onChangeText={setOtCustomerName}
-                colors={colors}
-              />
-              <Field
-                label="Contact Name "
-                value={otName}
-                onChangeText={setOtName}
-                colors={colors}
-                required
-              />
-              <View style={tw`flex-row`}>
-                <View style={tw`flex-1 mr-2`}>
+
+            <View style={tw`mt-3`}>
+              {selectedUse === 'customer' && (
+                <SelectInput
+                  label="Customer"
+                  selectedValue={selectedCustomer?.name || 'Select'}
+                  onPress={() => setPickerOpen(true)}
+                  colors={colors}
+                  required
+                />
+              )}
+              {selectedUse === 'vendor' && (
+                <SelectInput
+                  label="Vendor"
+                  selectedValue={selectedVendor?.name || 'Select'}
+                  onPress={() => setPickerOpen(true)}
+                  colors={colors}
+                  required
+                />
+              )}
+              {selectedUse === 'one_time' && (
+                <>
                   <Field
-                    label="Phone "
-                    value={otPhone}
-                    onChangeText={setOtPhone}
+                    label="Customer Name "
+                    value={otCustomerName}
+                    onChangeText={setOtCustomerName}
                     colors={colors}
-                    keyboardType="phone-pad"
+                  />
+                  <Field
+                    label="Contact Name "
+                    value={otName}
+                    onChangeText={setOtName}
+                    colors={colors}
                     required
                   />
-                </View>
-                <View style={tw`flex-1`}>
-                  <Field
-                    label="Email"
-                    value={otEmail}
-                    onChangeText={setOtEmail}
+                  <View style={tw`flex-row`}>
+                    <View style={tw`flex-1 mr-2`}>
+                      <Field
+                        label="Phone "
+                        value={otPhone}
+                        onChangeText={setOtPhone}
+                        colors={colors}
+                        keyboardType="phone-pad"
+                        required
+                      />
+                    </View>
+                    <View style={tw`flex-1`}>
+                      <Field
+                        label="Email"
+                        value={otEmail}
+                        onChangeText={setOtEmail}
+                        colors={colors}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                      />
+                    </View>
+                  </View>
+
+                  <FieldSuggestions
+                    label="Auto Search Address"
+                    value={query}
+                    onChangeText={handleSearchAddress}
                     colors={colors}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
+                    suggestions={suggestions}
+                    setSuggestions={setSuggestions}
+                    setQuery={setQuery}
+                    setAddress={setAddress}
                   />
-                </View>
-              </View>
-              <FieldSuggestions
-                label="Auto Search Address"
-                value={query}
-                onChangeText={handleSearchAddress}
-                colors={colors}
-                suggestions={suggestions}
-                setSuggestions={setSuggestions}
-                setQuery={setQuery}
-                setAddress={setAddress}
-              />
-              <Field
-                label="Office / Suite #"
-                value={line2}
-                onChangeText={setLine2}
-                colors={colors}
-              />
-            </>
-          )}
-        </View>
+                  <Field
+                    label="Office / Suite #"
+                    value={line2}
+                    onChangeText={setLine2}
+                    colors={colors}
+                  />
+                </>
+              )}
+            </View>
 
-        <View style={[tw`mt-1 flex-row items-center`, { opacity: 0.8 }]}>
-          <MapPin width={14} height={14} color={colors.muted} />
-          <Text style={[tw`ml-2 text-2xs`, { color: colors.muted }]}>
-            We’ll geocode this address automatically on save.
-          </Text>
-        </View>
-
-        {/* Next CTA */}
+            <View style={[tw`mt-1 flex-row items-center`, { opacity: 0.8 }]}>
+              <MapPin width={14} height={14} color={colors.muted} />
+              <Text style={[tw`ml-2 text-2xs`, { color: colors.muted }]}>
+                We’ll geocode this address automatically on save.
+              </Text>
+            </View>
+          </>
+        )}
       </ScrollView>
-      <View style={tw`px-4 pb-4`}>
-        <TouchableOpacity
-          disabled={!valid}
-          onPress={onNext}
-          style={[
-            tw`mt-6 px-4 py-3 rounded-2xl items-center`,
-            {
-              backgroundColor: valid
-                ? colors.brand?.primary || '#2563eb'
-                : colors.border,
-            },
-          ]}
-        >
-          <Text style={tw`text-white font-semibold`}>
-            Next: Schedule & Requirements
-          </Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Modal: pick Customer/Vendor (separate from outer ScrollView -> no nested list warnings) */}
+      {/* Footer CTA */}
+      {!isBase && !isLunch && (
+        <View style={tw`px-4 pb-4`}>
+          <TouchableOpacity
+            disabled={!canContinue && !isLunch}
+            onPress={onNext}
+            style={[
+              tw`mt-6 px-4 py-3 rounded-2xl items-center`,
+              {
+                backgroundColor:
+                  isLunch || canContinue
+                    ? colors.brand?.primary || '#2563eb'
+                    : colors.border,
+              },
+            ]}
+          >
+            <Text style={tw`text-white font-semibold`}>
+              {isLunch
+                ? 'Next: Schedule & Requirements'
+                : 'Next: Schedule & Requirements'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {isLunch && (
+        <View style={tw`px-4 pb-4`}>
+          <TouchableOpacity
+            disabled={creatingLunch}
+            onPress={conConfirmLunch}
+            style={[
+              tw`mt-6 px-4 py-3 rounded-2xl items-center`,
+              {
+                backgroundColor:
+                  isLunch || canContinue
+                    ? colors.brand?.primary || '#2563eb'
+                    : colors.border,
+              },
+            ]}
+          >
+            <Text style={tw`text-white font-semibold`}>Create Lunch Stop</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Entity Picker */}
       <EntityPickerModal
         visible={pickerOpen}
         onClose={() => setPickerOpen(false)}
@@ -682,7 +838,7 @@ export default function AddStopScreen1() {
   );
 }
 
-/* ───────────────────── UI Bits ───────────────────── */
+/* ───────────────────── UI bits (unchanged except for using Switch above) ───────────────────── */
 
 function SegmentedControl({
   value,
@@ -780,7 +936,6 @@ function EntityPickerModal({
             { backgroundColor: colors.main },
           ]}
         >
-          {/* Header */}
           <View style={tw`flex-row items-center mb-3`}>
             <Text style={[tw`text-xl font-semibold`, { color: colors.text }]}>
               {title}
@@ -791,7 +946,6 @@ function EntityPickerModal({
             </TouchableOpacity>
           </View>
 
-          {/* Search */}
           <View
             style={[
               tw`flex-row items-center px-3 py-2 rounded-2xl mb-3`,
@@ -826,9 +980,7 @@ function EntityPickerModal({
                 const isSel = item.id === selectedId;
                 return (
                   <TouchableOpacity
-                    onPress={() => {
-                      onSelect(item);
-                    }}
+                    onPress={() => onSelect(item)}
                     style={[
                       tw`px-3 py-3 rounded-2xl mb-2`,
                       {
@@ -849,12 +1001,19 @@ function EntityPickerModal({
                         >
                           {item.name}
                         </Text>
-                        <View>
-                          <Text style={[tw`text-xs`, { color: colors.muted }]}>
-                            {item.address_line1}. {item.city}, {item.region}{' '}
-                            {item.postal_code}
+                        {(item.address_line1 || item.city) && (
+                          <Text
+                            style={[
+                              tw`text-xs`,
+                              { color: isSel ? '#fff' : colors.muted },
+                            ]}
+                          >
+                            {item.address_line1 || ''}
+                            {item.city ? `. ${item.city}` : ''}
+                            {item.region ? `, ${item.region}` : ''}{' '}
+                            {item.postal_code || ''}
                           </Text>
-                        </View>
+                        )}
                         {(item.email || item.phone) && (
                           <Text
                             style={[
@@ -884,7 +1043,6 @@ function EntityPickerModal({
             />
           )}
 
-          {/* Footer */}
           <TouchableOpacity
             onPress={onClose}
             style={[

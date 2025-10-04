@@ -13,6 +13,7 @@ import AdminNavigation from './admin/AdminNavigation';
 import UserTab from './users/tabs/UserTabNavigation';
 import DriverNavigation from './driver/DriverNavigation';
 import SubscriptionNavigation from './subscription/SubscriptionNavigation';
+import { linking } from '../shared/lib/linking';
 
 export default function RootNavigator() {
   const { isDark, colors } = useTheme();
@@ -36,7 +37,7 @@ export default function RootNavigator() {
   if (!bootstrapped || status === 'unknown') return null;
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} linking={linking}>
       <SafeAreaView
         edges={['top', 'bottom']}
         style={{ flex: 1, backgroundColor: appBg }}
