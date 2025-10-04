@@ -566,12 +566,7 @@ export default function CreateRouteStep1Screen() {
 function SectionTitle({ text }: { text: string }) {
   const { colors } = useTheme();
   return (
-    <View
-      style={[
-        tw`w-full border-b border-b-2 pb-1 mb-2`,
-        { borderColor: colors.border },
-      ]}
-    >
+    <View style={[tw`w-full pb-1`, { borderColor: colors.border }]}>
       <Text
         style={[tw`text-lg font-semibold mt-2 mb-1`, { color: colors.text }]}
       >
