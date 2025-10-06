@@ -10,6 +10,7 @@ import AddStopScreen2 from '../../../app/stops/AddStopScreen2';
 import AddStopPhotosScreen from '../../../app/stops/AddStopPhotosScreen';
 import AddStopScreen3 from '../../../app/stops/AddStopScreen3';
 import StopSummaryEditScreen from '../../../app/stops/StopSummaryEditScreen';
+import RouteAnalyticsScreen from '../../../app/routes/RouteAnalyticsScreen';
 type AuthParamList = {
   Routes: undefined;
   CreateRouteStep1: undefined;
@@ -19,6 +20,7 @@ type AuthParamList = {
   AddStopPhotosScreen: { stopId: number };
   AddStopScreen3: { routeId: number; stopsCount: number };
   StopSummaryEditScreen: { stop: any };
+  RouteAnalytics: undefined;
 };
 const Stack = createStackNavigator<AuthParamList>();
 
@@ -48,6 +50,7 @@ export default function RoutesStack() {
         name="StopSummaryEditScreen"
         component={StopSummaryEditScreen}
       />
+      <Stack.Screen name="RouteAnalytics" component={RouteAnalyticsScreen} />
     </Stack.Navigator>
   );
 }

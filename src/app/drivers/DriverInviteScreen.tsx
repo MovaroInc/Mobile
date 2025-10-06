@@ -21,6 +21,7 @@ import {
   validateUsernameField,
 } from '../../shared/lib/validators';
 import { inviteDriver } from '../../shared/lib/InviteHelpers';
+import { CreateInbox } from '../../shared/lib/inboxHelpers';
 
 type Form = {
   firstName: string;
@@ -118,6 +119,9 @@ export default function DriverInviteScreen() {
     setForm(prev => ({ ...prev, [key]: value?.toLowerCase() }));
   }
 
+  const inDaysFromNowISO = (days: number) =>
+    new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
   async function handleSubmit() {
     if (!canSubmit) {
       Alert.alert(
@@ -128,8 +132,7 @@ export default function DriverInviteScreen() {
     }
     setSubmitting(true);
     try {
-      // Shape the payload for your server (DOB and address removed)
-      const payload = {
+      const invitePayload = {
         business_id: business?.id,
         invited_by_profile_id: profile?.id,
         invited_role: 'driver',
@@ -137,30 +140,62 @@ export default function DriverInviteScreen() {
         last_name: form.lastName.trim(),
         username: form.username ? form.username.trim().toLowerCase() : null,
         invited_email: form.email.toLowerCase(),
-        invited_phone: form.phone.trim(), // required
+        invited_phone: form.phone.trim(),
         notes: form.notes || null,
         attempts: 0,
         max_attempts: 3,
-        reference_code: form.accessCode || null, // optional
+        reference_code: form.accessCode || null,
         code_hash: form.accessCode,
         status: 'pending',
         sent_at: new Date().toISOString(),
+        expired_at: inDaysFromNowISO(3),
       };
 
-      console.log('inviting driver', JSON.stringify(payload, null, 2));
-      const res = await inviteDriver(payload);
-      console.log('res', res);
+      const res = await inviteDriver(invitePayload);
+
+      // ---- Create an Inbox item (invite sent) for the manager ----
+      // (Your server expects businessId camelCase for mapping)
+      const inboxPayload = {
+        businessId: business?.id,
+        profile_id: profile?.id, // manager recipient
+        type: 'invite_sent',
+        severity: 'info',
+        title: `Invite sent to ${form.firstName} ${form.lastName}`,
+        body: `Email: ${form.email} • Phone: ${form.phone}`,
+        actor: 'owner_app',
+        actor_id: profile?.id,
+        actionable: true,
+        action_label: 'View invites',
+        action_route: 'InvitesList', // your screen name
+        action_params: { status: 'pending' },
+        dedupe_key: `invite.sent:${business?.id}:${form.email.toLowerCase()}`,
+        dedupe_until: new Date(Date.now() + 60_000).toISOString(), // 1 min
+        status: 'unread',
+        pinned: false,
+        // any route/stop/driver refs not relevant here:
+        route_id: null,
+        stop_id: null,
+        driver_employee_id: null,
+        driver_profile_id: null,
+      };
+
+      try {
+        const res = await CreateInbox(inboxPayload);
+        console.log('res', res);
+      } catch (e) {
+        // Soft-fail: don’t block UX if inbox write fails
+        console.log('CreateInbox failed:', e);
+      }
 
       Alert.alert('Driver invited', 'We sent an invite email to the driver.');
-
       setForm(initialForm);
       setEmailTaken(null);
       setUsernameTaken(null);
+      nav.goBack();
     } catch (err: any) {
       Alert.alert('Invite failed', err?.message || 'Please try again.');
     } finally {
       setSubmitting(false);
-      nav.goBack();
     }
   }
 

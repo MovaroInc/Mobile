@@ -104,7 +104,7 @@ export default function AddStopScreen2() {
   }, [positionMode, stopsCount, afterIndex]);
 
   /** ── Schedule ─────────────────────────────────────────────── */
-  const [serviceMinutes, setServiceMinutes] = useState('10');
+  const [serviceMinutes, setServiceMinutes] = useState('30');
   const [windowStart, setWindowStart] = useState<string>(''); // HH:mm
   const [windowEnd, setWindowEnd] = useState<string>(''); // HH:mm
   const [hardWindow, setHardWindow] = useState(false);
@@ -250,7 +250,7 @@ export default function AddStopScreen2() {
       position, //
       sequence: positionMode === 'start' ? 0 : stopsCount + 1,
       window: {
-        planned_service_minutes: Number(serviceMinutes) || 10,
+        planned_service_minutes: Number(serviceMinutes) || 30,
         window_start: windowStart || null,
         window_end: windowEnd || null,
         hard_window: hardWindow,

@@ -40,6 +40,7 @@ import {
 import { getBusinessById } from '../../shared/lib/BusinessHelpers';
 import { getSubscriptionByBusinessId } from '../../shared/lib/SubscriptionHelpers';
 import { grabCurrentLocation } from '../../shared/lib/locations';
+import { CreateInbox } from '../../shared/lib/inboxHelpers';
 
 type RootStackParamList = {
   DriverSignup: { inviteId?: string } | undefined;
@@ -273,6 +274,77 @@ export default function DriverSignupScreen() {
     grabLocation();
   }, []);
 
+  const createInboxForInviteAccepted = async ({
+    businessId,
+    inviteId,
+    inviterProfileId,
+    newProfileId,
+    employeeId,
+    firstName,
+    lastName,
+    email,
+    phone,
+  }) => {
+    // Manager sees: "<Name> accepted invite"
+    await CreateInbox({
+      businessId,
+      type: 'invite_accepted',
+      severity: 'info',
+      title: 'Invite accepted',
+      body: `${firstName} ${lastName} accepted their invite and joined your business.`,
+      actor: 'driver_app',
+      actor_id: newProfileId,
+      profile_id: inviterProfileId, // 👈 visible to inviter/manager
+      actionable: true,
+      action_label: 'View invite',
+      action_route: 'InvitesList',
+      action_params: { inviteId, status: 'accepted' },
+      dedupe_key: `invite.accepted:${inviteId}:${inviterProfileId}`,
+      metadata: {
+        inviteId,
+        employeeId,
+        newProfileId,
+        email,
+        phone,
+      },
+    });
+  };
+
+  const createInboxForDriverAdded = async ({
+    businessId,
+    inviterProfileId,
+    newProfileId,
+    employeeId,
+    firstName,
+    lastName,
+    email,
+    phone,
+  }) => {
+    // Manager sees: "New driver added"
+    await CreateInbox({
+      businessId,
+      type: 'driver_created',
+      severity: 'info',
+      title: 'New driver added',
+      body: `${firstName} ${lastName} was added as a Driver.`,
+      actor: 'driver_app',
+      actor_id: inviterProfileId,
+      profile_id: inviterProfileId, // 👈 visible to the manager
+      actionable: true,
+      action_label: 'View driver',
+      action_route: 'EmployeeDetail',
+      action_params: { employeeId },
+      dedupe_key: `driver.added:${employeeId}:${inviterProfileId}`,
+      metadata: {
+        employeeId,
+        newProfileId,
+        role: 'Driver',
+        email,
+        phone,
+      },
+    });
+  };
+
   const handleSubmit = async () => {
     if (!canSubmit) {
       Alert.alert('Check form', 'Please fix the validation errors.');
@@ -286,7 +358,7 @@ export default function DriverSignupScreen() {
       const { data, error } = await createUserAccount(
         email,
         password,
-        username,
+        email,
         firstName,
         lastName,
         phone,
@@ -336,6 +408,29 @@ export default function DriverSignupScreen() {
         Alert.alert('Error', employeeError.message);
         return;
       }
+
+      await createInboxForInviteAccepted({
+        businessId: invite.business_id,
+        inviteId: invite.id,
+        inviterProfileId: invite.invited_by_profile_id,
+        newProfileId: data.data.id,
+        employeeId: employeeData.data.id,
+        firstName,
+        lastName,
+        email,
+        phone,
+      });
+
+      await createInboxForDriverAdded({
+        businessId: invite.business_id,
+        inviterProfileId: invite.invited_by_profile_id,
+        newProfileId: data.data.id,
+        employeeId: employeeData.data.id,
+        firstName,
+        lastName,
+        email,
+        phone,
+      });
 
       const { error: updateProfileError } = await updateProfileWithEmployeeId(
         invite.business_id,
@@ -421,70 +516,82 @@ export default function DriverSignupScreen() {
             />
           )}
 
-          <View style={tw`flex-row gap-3`}>
-            <Field
-              label="First name"
-              value={firstName}
-              onChangeText={setFirstName}
-              placeholder="First name"
-              containerStyle={tw`flex-1`}
-              error={!nonEmpty(firstName) ? 'Required' : undefined}
-            />
-            <Field
-              label="Last name"
-              value={lastName}
-              onChangeText={setLastName}
-              placeholder="Last name"
-              containerStyle={tw`flex-1`}
-              error={!nonEmpty(lastName) ? 'Required' : undefined}
-            />
-          </View>
+          {!codeVerified && (
+            <View>
+              <Text style={tw`text-gray-400`}>
+                Please check your invite email for a 9-digit code. You must
+                enter that code above to continue.
+              </Text>
+            </View>
+          )}
 
-          {/* Email (locked) */}
-          <Field
-            label="Create password"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="At least 8 characters"
-            secureTextEntry
-            error={
-              password.length > 0 && !passwordStrong
-                ? 'Must be 8+ chars, include a letter and a number'
-                : undefined
-            }
-          />
-          <Field
-            label="Confirm password"
-            value={password2}
-            onChangeText={setPassword2}
-            placeholder="Re-enter password"
-            secureTextEntry
-            error={
-              password2.length > 0 && !passwordsMatch
-                ? 'Passwords do not match'
-                : undefined
-            }
-          />
+          {codeVerified && (
+            <View>
+              <View style={tw`flex-row gap-3`}>
+                <Field
+                  label="First name"
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder="First name"
+                  containerStyle={tw`flex-1`}
+                  error={!nonEmpty(firstName) ? 'Required' : undefined}
+                />
+                <Field
+                  label="Last name"
+                  value={lastName}
+                  onChangeText={setLastName}
+                  placeholder="Last name"
+                  containerStyle={tw`flex-1`}
+                  error={!nonEmpty(lastName) ? 'Required' : undefined}
+                />
+              </View>
 
-          <Field
-            label="Email"
-            value={email}
-            onChangeText={() => {}}
-            placeholder="email@example.com"
-            keyboardType="email-address"
-            editable={false}
-            right={<Text style={tw`text-gray-400`}>locked</Text>}
-          />
+              <Field
+                label="Create password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="At least 8 characters"
+                secureTextEntry
+                error={
+                  password.length > 0 && !passwordStrong
+                    ? 'Must be 8+ chars, include a letter and a number'
+                    : undefined
+                }
+              />
+              <Field
+                label="Confirm password"
+                value={password2}
+                onChangeText={setPassword2}
+                placeholder="Re-enter password"
+                secureTextEntry
+                error={
+                  password2.length > 0 && !passwordsMatch
+                    ? 'Passwords do not match'
+                    : undefined
+                }
+              />
 
-          <Field
-            label="Phone"
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="949 494 4994"
-            keyboardType="phone-pad"
-            editable={false}
-            right={<Text style={tw`text-gray-400`}>locked</Text>}
-          />
+              <Field
+                label="Email"
+                value={email}
+                onChangeText={() => {}}
+                placeholder="email@example.com"
+                keyboardType="email-address"
+                editable={false}
+                right={<Text style={tw`text-gray-400`}>locked</Text>}
+              />
+
+              <Field
+                label="Phone"
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="949 494 4994"
+                keyboardType="phone-pad"
+                editable={false}
+                right={<Text style={tw`text-gray-400`}>locked</Text>}
+              />
+            </View>
+          )}
 
           {/* First / Last name */}
 

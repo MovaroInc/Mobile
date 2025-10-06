@@ -36,6 +36,7 @@ import SelectInput from '../../shared/components/inputs/SelectInput';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
 import DriverPickerModal from '../../shared/components/modals/DriverPickerModal';
 import { createDraftRoute } from '../../shared/lib/RouteHelpers';
+import { CreateInbox } from '../../shared/lib/inboxHelpers';
 
 type RouteParams = Partial<{
   driverId: number | null;
@@ -78,14 +79,14 @@ export default function CreateRouteStep1Screen() {
   const { colors } = useTheme();
   const nav = useNavigation<any>();
   const { params } = useRoute<any>();
-  const { business } = useSession();
+  const { business, profile } = useSession();
 
   const items = buildDateRange(8); // today + next 7
   const initialISO =
     (params as RouteParams)?.serviceDateISO ??
     (items[0]?.iso || new Date().toISOString().slice(0, 10));
 
-  const [name, setName] = useState<string | null>(`${items[0]?.label} (Route)`);
+  const [name, setName] = useState<string | null>(`New Route`);
   const [selectedIso] = useState(initialISO);
 
   // Time picker
@@ -222,6 +223,54 @@ export default function CreateRouteStep1Screen() {
     }
   };
 
+  const notifyRouteDraftCreated = async ({
+    businessId,
+    routeId,
+    routeName,
+    serviceDateISO,
+    plannedStartISO,
+    creatorProfileId,
+    driverProfileId,
+  }) => {
+    const basePayload = {
+      businessId,
+      type: 'route_draft',
+      severity: 'info',
+      title: 'Route draft created',
+      body: `“${routeName}” scheduled for ${serviceDateISO}.`,
+      actor: 'owner_app',
+      actor_id: creatorProfileId,
+      actionable: true,
+      action_label: 'Open draft',
+      action_route: 'RouteDraftScreen',
+      action_params: { routeId },
+      metadata: {
+        routeId,
+        routeName,
+        serviceDateISO,
+        plannedStartISO,
+      },
+    };
+
+    // Notify creator/manager
+    await CreateInbox({
+      ...basePayload,
+      profile_id: creatorProfileId,
+      dedupe_key: `route.draft.created:${routeId}:${creatorProfileId}`,
+    });
+
+    // Notify assigned driver (if any)
+    if (driverProfileId) {
+      await CreateInbox({
+        ...basePayload,
+        title: 'YA new route (draft) was created',
+        body: `“${routeName}” (${serviceDateISO}) has been assigned.`,
+        profile_id: driverProfileId,
+        dedupe_key: `route.draft.created:${routeId}:${driverProfileId}`,
+      });
+    }
+  };
+
   const onNext = async () => {
     setLoading(true);
     if (!valid) {
@@ -247,11 +296,19 @@ export default function CreateRouteStep1Screen() {
     };
 
     const draft = await createDraftRoute(payload);
-    // Navigate with persisted id if you return it from API:
-    // nav.navigate('CreateRouteStep2', { routeId: draft.id, route: draft });
+
     console.log('draft', draft);
     setLoading(false);
     if (draft.success) {
+      await notifyRouteDraftCreated({
+        businessId: business!.id,
+        routeId: draft.data.id,
+        routeName: payload.name,
+        serviceDateISO: payload.service_date,
+        plannedStartISO: payload.planned_start_at,
+        creatorProfileId: profile?.id ?? null, // <-- your current user's profile id
+        driverProfileId: selectedDriver?.Profile?.id ?? null,
+      });
       nav.navigate('RouteDraftScreen', {
         routeId: draft.data.id,
         payload,

@@ -35,6 +35,7 @@ import { getInviteByBusinessId } from '../../shared/lib/InviteHelpers';
 
 // ✅ Mapbox
 import MapboxGL from '@rnmapbox/maps';
+import { emitInboxEvent } from '../../shared/lib/inboxHelpers';
 MapboxGL.setAccessToken(
   'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A',
 );
@@ -154,6 +155,7 @@ export default function DriversScreen() {
           : all.data.filter((i: Invite) => i.status === inviteFilter);
       console.log('filtered', filtered);
       setInvites(filtered);
+      await emitInboxEvent(business.id);
     } catch {
       setInvites([]);
     } finally {

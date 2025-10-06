@@ -1,5 +1,5 @@
 // src/app/routes/RouteScreen.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -20,12 +20,18 @@ import {
   Navigation,
   CheckCircle,
   AlertTriangle,
+  BarChart2,
 } from 'react-native-feather';
 import { buildDateRange } from '../../shared/utils/dates';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSession } from '../../state/useSession';
-import { getRoutesByBusinessId } from '../../shared/lib/RouteHelpers'; // your helper from the prompt
+import {
+  getDraftRoutesByBusinessId,
+  getRoutesByBusinessId,
+} from '../../shared/lib/RouteHelpers';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
+
+/* ─────────────────────────── Types ─────────────────────────── */
 
 type RouteStatus =
   | 'draft'
@@ -39,16 +45,15 @@ type Stop = {
   id: number;
   route_id: number;
   planned_service_minutes?: number | null;
-  // ...other stop props you return
 };
 
 type DBRoute = {
   id: number;
   name: string;
   status: RouteStatus;
-  employee_id: number | null; // driver’s employee id
+  employee_id: number | null; // driver's employee id
   planned_start_at?: string | null;
-  service_date: string; // YYYY-MM-DD
+  service_date: string; // YYYY-MM-DD (normalized)
   stops?: Stop[];
 };
 
@@ -65,6 +70,28 @@ type Employee = {
 };
 
 type UiDriver = { id: number; name: string };
+
+/* ───────────────────── Local date helpers ───────────────────── */
+
+function ymdToLocalDate(ymd: string) {
+  // Parse 'YYYY-MM-DD' as local midnight (prevents UTC shift)
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
+function formatLocalYMD(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function ymdOnly(dateLike?: string | null) {
+  // Normalize 'YYYY-MM-DD' or full ISO -> 'YYYY-MM-DD'
+  return (dateLike ?? '').slice(0, 10);
+}
+
+/* ───────────────────────── Utilities ───────────────────────── */
 
 function toDriverName(e: Employee): string {
   const fn = e.Profile?.first_name?.trim() ?? '';
@@ -88,69 +115,100 @@ function toHM(mins: number) {
   return `${h}h ${m}m`;
 }
 
+/* ────────────────────────── Screen ─────────────────────────── */
+
 export default function RouteScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
   const { business } = useSession();
 
-  const items = buildDateRange(8); // [{ date, iso, label }]
-  const [selectedIso, setSelectedIso] = useState(items[0].iso);
+  const items = buildDateRange(8); // [{ date, iso, label }] (may be UTC-based in your util)
+
+  // Ensure default selected date is *local* today even if items[0] is skewed by UTC.
+  const todayLocalISO = formatLocalYMD(new Date());
+  const initialIso =
+    items.find(i => i.iso === todayLocalISO)?.iso ?? items[0].iso;
+
+  const [selectedIso, setSelectedIso] = useState(initialIso);
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [routes, setRoutes] = useState<DBRoute[]>([]);
+  const [draftRoutes, setDraftRoutes] = useState<DBRoute[]>([]);
   const [drivers, setDrivers] = useState<UiDriver[]>([]);
 
-  // Load drivers + routes whenever business/date changes
-  useEffect(() => {
-    if (!business?.id) return;
-    (async () => {
-      setLoading(true);
-      try {
-        // drivers
-        const drvRes = await getDrivers(business.id);
-        const drvList: UiDriver[] = (drvRes?.data ?? [])
-          .filter((e: Employee) => e.is_driver !== false) // allow true or null by default
-          .map((e: Employee) => ({ id: e.id, name: toDriverName(e) }));
-        setDrivers(drvList);
+  // Load drivers + routes when business/date changes
+  useFocusEffect(
+    useCallback(() => {
+      if (!business?.id) return;
+      (async () => {
+        setLoading(true);
+        try {
+          // drivers
+          const drvRes = await getDrivers(business.id);
+          const drvList: UiDriver[] = (drvRes?.data ?? [])
+            .filter((e: Employee) => e.is_driver !== false)
+            .map((e: Employee) => ({ id: e.id, name: toDriverName(e) }));
+          setDrivers(drvList);
 
-        // routes (with stops)
-        const rRes = await getRoutesByBusinessId(business.id, selectedIso);
-        const fetched: DBRoute[] = (rRes?.data ?? []).map((r: any) => ({
-          id: r.id,
-          name: r.name,
-          status: r.status,
-          employee_id: r.employee_id ?? r.driver_id ?? null,
-          planned_start_at: r.planned_start_at ?? null,
-          service_date: r.service_date,
-          stops: r.stops ?? [],
-        }));
-        setRoutes(fetched);
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('Failed loading routes/drivers', e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [business?.id, selectedIso]);
+          // routes (normalize shapes + dates)
+          console.log('onRefresh', business.id, selectedIso);
+          const rRes = await getRoutesByBusinessId(business.id, selectedIso);
+          if (rRes.error) {
+            throw new Error('Failed to fetch routes: ' + rRes.error.message);
+          }
+          const rResDraft = await getDraftRoutesByBusinessId(
+            business.id,
+            selectedIso,
+          );
+          if (rResDraft.error) {
+            throw new Error(
+              'Failed to fetch draft routes: ' + rResDraft.error.message,
+            );
+          }
+          setRoutes(rRes.data);
+          setDraftRoutes(rResDraft.data);
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed loading routes/drivers', e);
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }, [business?.id, selectedIso]),
+  );
 
   const onRefresh = async () => {
     if (!business?.id) return;
     setRefreshing(true);
     try {
+      console.log('onRefresh', business.id, selectedIso);
       const rRes = await getRoutesByBusinessId(business.id, selectedIso);
-      console.log('rRes', rRes.data);
+      if (rRes.error) {
+        throw new Error('Failed to fetch routes: ' + rRes.error.message);
+      }
+      const rResDraft = await getDraftRoutesByBusinessId(
+        business.id,
+        selectedIso,
+      );
+      if (rResDraft.error) {
+        throw new Error(
+          'Failed to fetch draft routes: ' + rResDraft.error.message,
+        );
+      }
       setRoutes(rRes.data);
+      setDraftRoutes(rResDraft.data);
     } finally {
       setRefreshing(false);
     }
   };
 
-  // Build derived view for the selected date
+  // Derived view for the selected *local* day
   const view = useMemo(() => {
-    // Filter (API already filters by date, but keep it safe)
-    const dayRoutes = routes.filter(r => r.service_date === selectedIso);
+    // Filter by normalized YMD
+    const dayRoutes = routes.filter(
+      r => ymdOnly(r.service_date) === selectedIso,
+    );
     const allRoutes = routes;
 
     const totalRoutes = dayRoutes.length;
@@ -159,23 +217,25 @@ export default function RouteScreen() {
       0,
     );
 
-    // map employee_id -> route
+    // employee_id -> route
     const driverAssignments: Record<number, DBRoute> = {};
     dayRoutes.forEach(r => {
       if (r.employee_id != null) driverAssignments[r.employee_id] = r;
     });
 
-    // Unassigned drivers = drivers without a route that day
+    // Unassigned drivers count
     const unassignedDrivers = drivers.filter(
       d => !(d.id in driverAssignments),
     ).length;
 
-    // Header title (Today / Tomorrow / Next Day)
+    // Header title with local date
     const selected = items.find(i => i.iso === selectedIso) ?? items[0];
-    const d = new Date(selected.iso);
-    const today = items[0].iso;
+    const d = ymdToLocalDate(selected.iso);
+
+    const today = initialIso;
     const tomorrow = items[1]?.iso;
     const nextDay = items[2]?.iso;
+
     const headerTitle =
       selected.iso === today
         ? fmtDateHeader(d, 'Today')
@@ -192,7 +252,7 @@ export default function RouteScreen() {
       driverAssignments,
       allRoutes,
     };
-  }, [routes, drivers, items, selectedIso]);
+  }, [routes, drivers, items, selectedIso, initialIso]);
 
   return (
     <View style={[tw`flex-1`, { backgroundColor: colors.bg ?? colors.main }]}>
@@ -216,7 +276,22 @@ export default function RouteScreen() {
         <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
           Routes
         </Text>
-        {loading ? <ActivityIndicator /> : null}
+        <View style={tw`flex-row items-center`}>
+          {loading ? <ActivityIndicator /> : null}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('RouteAnalytics')}
+            style={[
+              tw`p-2 rounded-2 ml-3`,
+              {
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.borderSecondary,
+              },
+            ]}
+          >
+            <BarChart2 width={16} height={16} color={colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Date chips */}
@@ -318,7 +393,7 @@ export default function RouteScreen() {
             />
           </View>
 
-          {/* Drivers list (real) */}
+          {/* Drivers list */}
           <FlatList
             data={drivers}
             keyExtractor={d => String(d.id)}
@@ -360,7 +435,7 @@ export default function RouteScreen() {
             }}
           />
 
-          {/* Routes preview (from DB) */}
+          {/* Routes preview */}
           {view.allRoutes.length > 0 ? (
             <View style={tw`mt-3`}>
               <Text
@@ -396,7 +471,87 @@ export default function RouteScreen() {
                     }
                     style={[
                       tw`mb-3 px-4 py-3 rounded-2xl`,
-                      { backgroundColor: 'rgba(255,255,255,0.06)' },
+                      { backgroundColor: colors.borderSecondary },
+                    ]}
+                  >
+                    <View style={tw`flex-row items-center justify-between`}>
+                      <Text
+                        style={[
+                          tw`text-base font-semibold`,
+                          { color: colors.text },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {r.name}
+                      </Text>
+                      <StatusPill status={r.status} colors={colors} />
+                    </View>
+
+                    <View style={tw`flex-row items-center mt-2`}>
+                      <Truck width={14} height={14} color="#9CA3AF" />
+                      <Text
+                        style={tw`text-gray-400 text-xs ml-1`}
+                        numberOfLines={1}
+                      >
+                        {driverName}
+                      </Text>
+                      <View style={tw`w-3`} />
+                      <Navigation width={14} height={14} color="#9CA3AF" />
+                      <Text style={tw`text-gray-400 text-xs ml-1`}>
+                        {stopsCount} stops
+                      </Text>
+                      <View style={tw`w-3`} />
+                      <Clock width={14} height={14} color="#9CA3AF" />
+                      <Text style={tw`text-gray-400 text-xs ml-1`}>
+                        {toHM(durationMin)}
+                        {startHM ? ` • ${startHM}` : ''}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={[tw`text-xs mt-4`, { color: '#9CA3AF' }]}>
+              No routes for this day.
+            </Text>
+          )}
+          {draftRoutes.length > 0 ? (
+            <View style={tw`mt-3`}>
+              <Text
+                style={[tw`text-xl mb-2 font-semibold`, { color: colors.text }]}
+              >
+                Draft Routes
+              </Text>
+              {draftRoutes.map(r => {
+                const stopsCount = r.stops?.length ?? 0;
+                const durationMin =
+                  (r.stops ?? []).reduce(
+                    (sum, s) => sum + (s.planned_service_minutes ?? 10),
+                    0,
+                  ) || stopsCount * 10;
+                const driverName =
+                  drivers.find(d => d.id === r.employee_id)?.name ??
+                  'Unassigned';
+                const startHM = r.planned_start_at
+                  ? new Date(r.planned_start_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '';
+                return (
+                  <TouchableOpacity
+                    key={r.id}
+                    activeOpacity={0.85}
+                    onPress={() =>
+                      navigation.navigate('RouteDraftScreen', {
+                        routeId: r.id,
+                        payload: r,
+                      })
+                    }
+                    style={[
+                      tw`mb-3 px-4 py-3 rounded-2xl`,
+                      { backgroundColor: colors.borderSecondary },
                     ]}
                   >
                     <View style={tw`flex-row items-center justify-between`}>
@@ -464,7 +619,7 @@ function SummaryCard({
     <View
       style={[
         tw`flex-1 px-3 py-3 rounded-2xl`,
-        { backgroundColor: 'rgba(255,255,255,0.06)' },
+        { backgroundColor: colors.borderSecondary },
       ]}
     >
       <View style={tw`flex-row items-center justify-between`}>
@@ -495,7 +650,7 @@ function DriverRow({
     <View
       style={[
         tw`mb-2 px-4 py-3 rounded-2xl`,
-        { backgroundColor: 'rgba(255,255,255,0.06)' },
+        { backgroundColor: colors.borderSecondary },
       ]}
     >
       <View style={tw`flex-row items-center justify-between`}>
@@ -533,7 +688,7 @@ function DriverRow({
           <>
             <AlertTriangle width={14} height={14} color="#FBBF24" />
             <Text style={tw`text-gray-300 text-xs ml-1`}>
-              No route assigned
+              No dispatched route assigned
             </Text>
           </>
         )}

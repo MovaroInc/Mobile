@@ -1,7 +1,14 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Home, Briefcase, Users, BarChart2, User } from 'react-native-feather';
+import {
+  Home,
+  Briefcase,
+  Users,
+  BarChart2,
+  User,
+  Inbox,
+} from 'react-native-feather';
 
 import RoutesStack from '../stacks/RoutesStack';
 import OperationsStack from '../stacks/OperationsStack';
@@ -9,6 +16,7 @@ import DriversStack from '../stacks/DriversStack';
 import AnalyticsStack from '../stacks/AnalyticsStack';
 import ProfileStack from '../stacks/ProfileStack';
 import { useTheme } from '../../../shared/hooks/useTheme';
+import InboxStack from '../stacks/InboxStack';
 
 export type ManagerTabParamList = {
   RoutesTab: undefined;
@@ -71,11 +79,11 @@ export default function UserTabNavigation() {
         }}
       />
       <Tab.Screen
-        name="AnalyticsTab"
-        component={AnalyticsStack}
+        name="InboxTab"
+        component={InboxStack}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <BarChart2 width={size} height={size} color={color} />
+            <Inbox width={size} height={size} color={color} />
           ),
         }}
       />

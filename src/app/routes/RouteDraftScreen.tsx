@@ -46,8 +46,17 @@ import { api } from '../../shared/lib/api';
 import {
   getRouteById,
   publishRouteWithStops,
+  reassignDriver,
 } from '../../shared/lib/RouteHelpers';
 import { deleteStop, updateStopSequence } from '../../shared/lib/StopsHelpers';
+import { CreateInbox } from '../../shared/lib/inboxHelpers';
+import { useSession } from '../../state/useSession';
+
+// NEW: driver helpers
+import { getDrivers } from '../../shared/lib/DriversHelpers';
+import DriverPickerModal from '../../shared/components/modals/DriverPickerModal';
+
+/* ───────────────────────── Types ───────────────────────── */
 
 type RouteParams = {
   routeId: number;
@@ -66,6 +75,16 @@ type RouteParams = {
   };
 };
 
+type StopStatus =
+  | 'planned'
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed'
+  | 'skipped'
+  | 'canceled'
+  | 'cancelled'
+  | string;
+
 type Stop = {
   id: number;
   route_id: number;
@@ -82,27 +101,35 @@ type Stop = {
   window_end: string | null; // HH:mm (optional)
   notes: string | null;
   sequence: number; // order
-  // add other fields your schema needs
+  status?: StopStatus;
 };
 
-type StopInput = Partial<Stop> & {
-  route_id: number;
+type StopInput = Partial<Stop> & { route_id: number };
+
+type Employee = {
+  id: number; // employee id
+  is_driver?: boolean | null;
+  work_email?: string | null;
+  phone?: string | null;
+  Profile?: {
+    id?: number | null; // profile id
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+  } | null;
 };
 
-function formatTimeHM(iso: string | null | undefined) {
-  if (!iso) return '';
-  // iso like '2025-10-02T08:00:00'
-  const d = new Date(iso);
-  const hh = `${d.getHours()}`.padStart(2, '0');
-  const mm = `${d.getMinutes()}`.padStart(2, '0');
-  return `${hh}:${mm}`;
+/* ───────────────────── Utilities ───────────────────── */
+
+function toHHmm(d: Date) {
+  const h = `${d.getHours()}`.padStart(2, '0');
+  const m = `${d.getMinutes()}`.padStart(2, '0');
+  return `${h}:${m}`;
 }
 
 function formatHMAmPm(iso: string | null | undefined) {
   if (!iso) return '';
-  const d = new Date(iso); // converts UTC ISO to local time on device
-
-  // Prefer Intl if available (RN Hermes has it on modern versions)
+  const d = new Date(iso);
   try {
     return d.toLocaleTimeString([], {
       hour: 'numeric',
@@ -110,17 +137,19 @@ function formatHMAmPm(iso: string | null | undefined) {
       hour12: true,
     });
   } catch {
-    // Fallback: manual 12h format
     let h = d.getHours();
     const m = `${d.getMinutes()}`.padStart(2, '0');
     const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12; // 0 -> 12
+    h = h % 12 || 12;
     return `${h}:${m} ${ampm}`;
   }
 }
 
+/* ───────────────────── Screen ───────────────────── */
+
 export default function RouteDraftScreen() {
   const { colors } = useTheme();
+  const { business, profile } = useSession();
   const nav = useNavigation<any>();
   const { params } = useRoute<any>();
   const { routeId, payload } = params as RouteParams;
@@ -131,24 +160,24 @@ export default function RouteDraftScreen() {
   const [publishing, setPublishing] = useState(false);
   const [route, setRoute] = useState<any>(null);
 
-  // Stop modal state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingStop, setEditingStop] = useState<Stop | null>(null);
-
   const [headerTitle, setHeaderTitle] = useState('');
 
+  // NEW: Driver reassignment state
+  const [driverModalOpen, setDriverModalOpen] = useState(false);
+  const [allDrivers, setAllDrivers] = useState<Employee[]>([]);
+  const [selectedDriver, setSelectedDriver] = useState<Employee | null>(null);
+
   useEffect(() => {
-    console.log('payload', payload);
     const d = new Date(payload.service_date);
     const label = d.toLocaleDateString(undefined, {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
     });
-    console.log('label', label);
     setHeaderTitle(label);
   }, [payload]);
 
+  // Load route + stops
   useFocusEffect(
     useCallback(() => {
       fetchStops();
@@ -160,11 +189,28 @@ export default function RouteDraftScreen() {
     fetchStops();
   }, []);
 
+  // NEW: load drivers and preselect current
+  useLayoutEffect(() => {
+    if (!business?.id) return;
+    (async () => {
+      try {
+        const res = await getDrivers(business.id);
+        const list: Employee[] = (res?.data ?? []).filter(
+          (e: Employee) => e.is_driver !== false,
+        );
+        setAllDrivers(list);
+
+        const currentEmpId = payload.employee_id ?? route?.employee_id ?? null;
+        const cur = list.find(d => d.id === currentEmpId) ?? null;
+        setSelectedDriver(cur);
+      } catch {}
+    })();
+  }, [business?.id, route?.employee_id, payload.employee_id]);
+
   const fetchStops = async () => {
     setLoading(true);
     try {
       const res = await getRouteById(routeId);
-      console.log('res', res.data.stops);
       setRoute(res.data);
       setStops(res.data.stops.sort((a, b) => a.sequence - b.sequence));
     } catch (e: any) {
@@ -178,14 +224,13 @@ export default function RouteDraftScreen() {
   const canMoveStop = (s?: Stop) => !!s && (!s.status || MOVABLE.has(s.status));
 
   const openCreate = () => {
-    console.log('stops', stops.length);
     nav.navigate('AddStopScreen1', { routeId, stopsCount: stops.length });
   };
   const openEdit = (s: Stop) => {
     nav.navigate('StopSummaryEditScreen', { stop: s });
   };
 
-  const onDelete = (s: Stop) => {
+  const confirmDelete = (s: Stop) => {
     Alert.alert('Remove stop?', `Delete "${s.customer_name ?? 'Stop'}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -218,28 +263,24 @@ export default function RouteDraftScreen() {
     const a = stops[indexA];
     const b = stops[indexB];
 
-    // Only allow if both are movable
     if (!canMoveStop(a) || !canMoveStop(b)) return;
 
     const aSeq = a.sequence;
     const bSeq = b.sequence;
 
-    // optimistic UI: swap sequences and resort by sequence
     setStops(prev => {
       const next = [...prev];
       next[indexA] = { ...a, sequence: bSeq };
       next[indexB] = { ...b, sequence: aSeq };
       return next.sort((x, y) => x.sequence - y.sequence);
     });
+
     try {
-      // update both rows in parallel
       await Promise.all([
         updateStopSequence(a.id, { sequence: bSeq }),
         updateStopSequence(b.id, { sequence: aSeq }),
       ]);
-      // success: nothing else to do (UI already reflects it)
     } catch (e: any) {
-      // rollback: put sequences back and resort
       setStops(prev => {
         const next = [...prev];
         const ai = next.findIndex(s => s.id === a.id);
@@ -259,7 +300,6 @@ export default function RouteDraftScreen() {
     if (index === 0) return;
     swapStops(index, index - 1);
   };
-
   const moveDown = (index: number) => {
     if (index === stops.length - 1) return;
     swapStops(index, index + 1);
@@ -278,6 +318,44 @@ export default function RouteDraftScreen() {
     }
   };
 
+  // Inbox: route dispatched
+  const notifyRouteDispatched = async ({
+    businessId,
+    routeId,
+    routeName,
+    serviceDateISO,
+    plannedStartISO,
+    dispatcherProfileId,
+  }: {
+    businessId: number;
+    routeId: number;
+    routeName: string;
+    serviceDateISO: string;
+    plannedStartISO: string;
+    dispatcherProfileId: number;
+  }) => {
+    const base = {
+      businessId,
+      type: 'route_dispatched',
+      severity: 'info',
+      actor: 'owner_app',
+      actor_id: dispatcherProfileId,
+      actionable: true,
+      action_label: 'Open route',
+      action_route: 'RouteDetailScreen',
+      action_params: { routeId },
+      metadata: { routeId, routeName, serviceDateISO, plannedStartISO },
+    };
+
+    await CreateInbox({
+      ...base,
+      title: 'Route dispatched',
+      body: `“${routeName}” (${serviceDateISO}) is now dispatched.`,
+      profile_id: dispatcherProfileId,
+      dedupe_key: `route.dispatched:${routeId}:${dispatcherProfileId}`,
+    });
+  };
+
   const onPublish = async () => {
     if (stops.length === 0) {
       Alert.alert(
@@ -293,6 +371,18 @@ export default function RouteDraftScreen() {
       });
 
       if (resp.success) {
+        try {
+          await notifyRouteDispatched({
+            businessId: payload.business_id!,
+            routeId,
+            routeName: payload.name,
+            serviceDateISO: payload.service_date,
+            plannedStartISO: payload.planned_start_at,
+            dispatcherProfileId: profile?.id!,
+          });
+        } catch (e) {
+          console.warn('inbox route.dispatched failed', e);
+        }
         Alert.alert('Published', 'Route scheduled!');
         nav.goBack();
       } else {
@@ -305,21 +395,56 @@ export default function RouteDraftScreen() {
     }
   };
 
-  const plannedStartHM = formatHMAmPm(payload.planned_start_at);
+  // NEW: reassignment
+  const handleReassignDriver = async (emp: Employee) => {
+    try {
+      const body = {
+        employee_id: emp.id,
+        driver_id: emp?.Profile?.id ?? null, // profile id
+      };
 
-  const confirmDelete = (s: Stop) => {
-    Alert.alert('Remove stop?', `Delete "${s.customer_name ?? 'Stop'}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteStop(s.id);
-          fetchStops();
-        },
-      },
-    ]);
+      const res = await reassignDriver(routeId, body);
+      if (res.error) {
+        throw new Error('Failed to reassign driver: ' + res.error.message);
+      }
+
+      setSelectedDriver(emp);
+
+      // optional inbox: route reassigned
+      try {
+        await CreateInbox({
+          businessId: payload.business_id!,
+          type: 'driver_reassigned',
+          severity: 'info',
+          title: 'Driver reassigned',
+          body:
+            `“${payload.name}” is now assigned to ` +
+            ([emp?.Profile?.first_name, emp?.Profile?.last_name]
+              .filter(Boolean)
+              .join(' ') || `#${emp.id}`) +
+            '.',
+          actor: 'owner_app',
+          actor_id: profile?.id ?? null,
+          actionable: true,
+          action_label: 'Open route',
+          action_route: 'RouteDraftScreen',
+          action_params: { routeId },
+          driver_employee_id: emp.id,
+          driver_profile_id: emp?.Profile?.id ?? null,
+          dedupe_key: `route.reassigned:${routeId}:${emp.id}`,
+          profile_id: profile?.id ?? null,
+        });
+      } catch (e) {
+        console.log('CreateInbox route.reassigned failed', e);
+      }
+      fetchStops();
+      Alert.alert('Driver updated', 'Route assigned to the selected driver.');
+    } catch (e: any) {
+      Alert.alert('Update failed', e?.message ?? 'Could not reassign driver.');
+    }
   };
+
+  const plannedStartHM = formatHMAmPm(payload.planned_start_at);
 
   return (
     <KeyboardAvoidingView
@@ -338,14 +463,13 @@ export default function RouteDraftScreen() {
         </View>
       </View>
 
-      {/* Stops list as FlatList (prevents nested virtualized lists warnings) */}
       <FlatList
         data={stops}
         keyExtractor={item => `${item.id}`}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={tw`px-4`}>
-            {/* Summary card */}
+            {/* Summary */}
             <View
               style={[
                 tw`rounded-2xl p-3 mb-3`,
@@ -372,14 +496,34 @@ export default function RouteDraftScreen() {
                 </Text>
               </View>
 
+              {/* Driver + Change button */}
               <View style={tw`flex-row items-center`}>
                 <User width={14} height={14} color={colors.text} />
                 <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
-                  Driver: #{payload.employee_id ?? '—'}
+                  Driver: #{route?.employee_id ?? payload.employee_id ?? '—'}
                   {' / '}
-                  {route?.profile?.first_name ?? ''}{' '}
-                  {route?.profile?.last_name ?? ''}
+                  {(route?.profile?.first_name ?? '') +
+                    ' ' +
+                    (route?.profile?.last_name ?? '')}
                 </Text>
+
+                <TouchableOpacity
+                  onPress={() => setDriverModalOpen(true)}
+                  style={[
+                    tw`ml-2 px-2 py-1 rounded-lg`,
+                    {
+                      backgroundColor: colors.main,
+                      borderWidth: 0.5,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[tw`text-xs font-semibold`, { color: colors.text }]}
+                  >
+                    Change
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {!!payload.tags?.length && (
@@ -407,13 +551,17 @@ export default function RouteDraftScreen() {
                   disabled={savingOrder}
                   style={[
                     tw`px-3 py-2 rounded-xl mr-2`,
-                    { backgroundColor: colors.border },
+                    {
+                      backgroundColor: colors.border,
+                      opacity: savingOrder ? 0.7 : 1,
+                    },
                   ]}
                 >
                   <Text style={{ color: colors.text }}>
                     {savingOrder ? 'Saving…' : 'Save Order'}
                   </Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={openCreate}
                   style={[
@@ -442,14 +590,13 @@ export default function RouteDraftScreen() {
           </View>
         }
         renderItem={({ item, index }) => {
-          console.log('item', item);
           const upDisabled =
             index === 0 || !canMoveStop(item) || !canMoveStop(stops[index - 1]);
-
           const downDisabled =
             index === stops.length - 1 ||
             !canMoveStop(item) ||
             !canMoveStop(stops[index + 1]);
+
           return (
             <View style={[tw`px-4`]}>
               <View
@@ -466,8 +613,8 @@ export default function RouteDraftScreen() {
                     ]}
                   >
                     {index + 1}.{' '}
-                    {item.business_name ||
-                      item.contact_name ||
+                    {item.customer_name ||
+                      item.business_name ||
                       'Unknown Business'}
                   </Text>
                   <View style={tw`flex-row`}>
@@ -490,31 +637,32 @@ export default function RouteDraftScreen() {
                       style={[tw`ml-2 text-sm`, { color: colors.text }]}
                       numberOfLines={2}
                     >
-                      {item.address_line1}, {item.city}, {item.region},
+                      {item.address_line1}, {item.city}, {item.region},{' '}
                       {item.postal_code}
                     </Text>
                   </View>
                 )}
+
                 <View style={tw`flex-row items-center justify-start mt-1`}>
-                  {!!item.contact_name && (
+                  {!!item.customer_name && (
                     <View style={tw`flex-row items-center mr-2`}>
                       <User width={14} height={14} color={colors.muted} />
                       <Text
                         style={[tw`ml-2 text-sm`, { color: colors.text }]}
                         numberOfLines={2}
                       >
-                        {item.contact_name}
+                        {item.customer_name}
                       </Text>
                     </View>
                   )}
-                  {!!item.contact_phone && (
+                  {!!(item as any).contact_phone && (
                     <View style={tw`flex-row items-center ml-4`}>
                       <Phone width={14} height={14} color={colors.muted} />
                       <Text
                         style={[tw`ml-2 text-sm`, { color: colors.text }]}
                         numberOfLines={2}
                       >
-                        {item.contact_phone}
+                        {(item as any).contact_phone}
                       </Text>
                     </View>
                   )}
@@ -547,7 +695,7 @@ export default function RouteDraftScreen() {
                     ]}
                   >
                     <Text style={[tw`text-xs`, { color: colors.text }]}>
-                      {item.stop_type}
+                      {(item as any).stop_type}
                     </Text>
                   </View>
                   <View style={tw`flex-row`}>
@@ -558,7 +706,7 @@ export default function RouteDraftScreen() {
                         tw`px-2 py-2 rounded-xl mr-2`,
                         {
                           backgroundColor: colors.main,
-                          opacity: index === 0 ? 0.5 : 1,
+                          opacity: upDisabled ? 0.5 : 1,
                         },
                       ]}
                     >
@@ -571,7 +719,7 @@ export default function RouteDraftScreen() {
                         tw`px-2 py-2 rounded-xl`,
                         {
                           backgroundColor: colors.main,
-                          opacity: index === stops.length - 1 ? 0.5 : 1,
+                          opacity: downDisabled ? 0.5 : 1,
                         },
                       ]}
                     >
@@ -606,45 +754,26 @@ export default function RouteDraftScreen() {
         }
       />
 
+      {/* DRIVER PICKER MODAL */}
+      <DriverPickerModal
+        visible={driverModalOpen}
+        onClose={() => setDriverModalOpen(false)}
+        drivers={allDrivers}
+        selectedId={selectedDriver?.id ?? null}
+        onSelect={(d: Employee) => {
+          setDriverModalOpen(false);
+          if (d) handleReassignDriver(d);
+        }}
+        colors={colors}
+      />
+
       {/* STOP FORM MODAL */}
       <StopFormModal
-        visible={modalOpen}
-        onClose={() => setModalOpen(false)}
+        visible={false /* open elsewhere if needed */}
+        onClose={() => {}}
         colors={colors}
-        initial={editingStop}
-        onSubmit={async form => {
-          try {
-            if (editingStop) {
-              const { data } = await api.patch<{ data: Stop }>(
-                `/routes/stops/${editingStop.id}`,
-                form,
-              );
-              setStops(prev =>
-                prev.map(s =>
-                  s.id === editingStop.id ? { ...s, ...data.data } : s,
-                ),
-              );
-            } else {
-              // set sequence to end
-              const sequence = (stops[stops.length - 1]?.sequence ?? 0) + 1;
-              const payload: StopInput = {
-                ...form,
-                route_id: routeId,
-                sequence,
-              };
-              const { data } = await api.post<{ data: Stop }>(
-                `/routes/${routeId}/stops`,
-                payload,
-              );
-              setStops(prev =>
-                [...prev, data.data].sort((a, b) => a.sequence - b.sequence),
-              );
-            }
-            setModalOpen(false);
-          } catch (e: any) {
-            Alert.alert('Error', e?.message ?? 'Save failed');
-          }
-        }}
+        initial={null}
+        onSubmit={async () => {}}
       />
     </KeyboardAvoidingView>
   );
@@ -697,15 +826,12 @@ function StopFormModal({
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
-  // break address pieces + geocode when user selects a suggestion
   useEffect(() => {
     if (!address) return;
     const parts = address.split(', ');
     setLine1(parts[0] ?? '');
     setCity(parts[1] ?? '');
     setRegion(parts[2] ?? '');
-    // geocode (RapidAPI sample; replace with your util if you have one)
-    // keep silent if it fails
     (async () => {
       try {
         const res = await fetch(
@@ -729,12 +855,6 @@ function StopFormModal({
       } catch {}
     })();
   }, [address]);
-
-  const toTime = (d: Date) =>
-    `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(
-      2,
-      '0',
-    )}`;
 
   const submit = () => {
     if (!line1 || !city || !region) {
@@ -783,15 +903,13 @@ function StopFormModal({
             </TouchableOpacity>
           </View>
 
-          {/* Form (no outer ScrollView to avoid nested VirtualizedList warnings) */}
+          {/* Form */}
           <Field
             label="Customer"
             value={customer}
             onChangeText={setCustomer}
             colors={colors}
           />
-
-          {/* Suggest & capture address */}
           <FieldSuggestions
             label="Search Address"
             value={query}
@@ -803,7 +921,6 @@ function StopFormModal({
             setAddress={setAddress}
           />
 
-          {/* Address fields */}
           <Field
             label="Address Line 1 "
             value={line1}
