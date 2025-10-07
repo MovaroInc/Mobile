@@ -19,6 +19,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useTheme } from '../../shared/hooks/useTheme';
 import { api } from '../../shared/lib/api';
 import { useSession } from '../../state/useSession';
+import { SubmitSupportTicket } from '../../shared/lib/utilsHelpers';
 
 type RouteParams = {
   subject?: string;
@@ -29,7 +30,7 @@ export default function ContactSupportScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
   const { colors } = useTheme();
-  const { profile, business, subscription } = useSession();
+  const { profile, business, subscription, employee } = useSession();
 
   // Optional prefill via route params
   const initialSubject = (route.params as RouteParams)?.subject || '';
@@ -56,42 +57,30 @@ export default function ContactSupportScreen() {
     subTier: subscription?.tier || null,
   });
 
-  const fallbackMailTo = async () => {
-    const to = 'support@movaroinc.com';
-    const body =
-      `${message}\n\n---\nContext\n` + JSON.stringify(buildContext(), null, 2);
-    const url =
-      `mailto:${to}` +
-      `?subject=${encodeURIComponent(subject)}` +
-      `&body=${encodeURIComponent(body)}`;
-    const ok = await Linking.canOpenURL(url);
-    if (ok) return Linking.openURL(url);
-    Alert.alert('Could not open email', 'Please email support@movaroinc.com');
-  };
-
   const handleSend = async () => {
     if (!canSend) {
       Alert.alert('Check fields', 'Please fill in subject and message.');
       return;
     }
-    Keyboard.dismiss();
     setSending(true);
     try {
       // Hit your backend — adjust path if different
       const payload = {
-        subject: subject.trim(),
-        message: message.trim(),
-        context: buildContext(),
+        sender_id: profile?.id,
+        subject,
+        message,
+        status: 'active',
+        viewed: false,
+        business_id: business?.id,
+        employee_id: employee?.id,
+        email: profile?.email,
+        phone: profile?.phone,
       };
 
-      const resp = await api.post<{
-        success: boolean;
-        message?: string | null;
-      }>('/support/contact', payload);
+      const resp = await SubmitSupportTicket(payload);
 
       if (!resp?.success) {
         // graceful fallback to mailto
-        await fallbackMailTo();
         return;
       }
 
@@ -100,8 +89,6 @@ export default function ContactSupportScreen() {
       setMessage('');
       nav.goBack();
     } catch {
-      // fallback to mail if API is unreachable
-      await fallbackMailTo();
     } finally {
       setSending(false);
     }

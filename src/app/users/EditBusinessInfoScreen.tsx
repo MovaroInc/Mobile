@@ -195,6 +195,18 @@ export default function EditBusinessInfoScreen() {
           ]}
         />
 
+        <View style={tw`mb-4`}>
+          <Text style={[tw`text-xs mb-1`, { color: colors.muted }]}>
+            Current business address
+          </Text>
+          <Text style={[tw`text-sm`, { color: colors.text }]}>
+            {business?.address_line1 || ''}
+            {business?.address_line2 || ''}, {business?.city || ''},{' '}
+            {business?.region || ''} {business?.postal_code || ''}{' '}
+            {business?.country || ''}
+          </Text>
+        </View>
+
         {/* Address */}
         <Text style={[tw`text-xs mb-1`, { color: colors.muted }]}>
           Business address
