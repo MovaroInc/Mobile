@@ -193,9 +193,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Movaro/Pods-Movaro-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Movaro/Pods-Movaro-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -232,9 +236,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Movaro/Pods-Movaro-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Movaro/Pods-Movaro-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -263,7 +271,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Movaro/Movaro.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6248MU8UP2;
+				DEVELOPMENT_TEAM = 6RMJ775C2T;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Movaro/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Movaro2;
@@ -279,7 +287,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = movaro.movaro.movaro;
+				PRODUCT_BUNDLE_IDENTIFIER = app.movaroinc.movaro;
 				PRODUCT_NAME = Movaro;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -295,7 +303,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Movaro/Movaro.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6248MU8UP2;
+				DEVELOPMENT_TEAM = 6RMJ775C2T;
 				INFOPLIST_FILE = Movaro/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Movaro2;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -310,7 +318,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = movaro.movaro.movaro;
+				PRODUCT_BUNDLE_IDENTIFIER = app.movaroinc.movaro;
 				PRODUCT_NAME = Movaro;
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";

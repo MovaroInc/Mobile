@@ -37,6 +37,7 @@ import {
   User,
   X as CloseIcon,
   Phone,
+  Edit2,
 } from 'react-native-feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -476,11 +477,30 @@ export default function RouteDraftScreen() {
                 { backgroundColor: colors.border },
               ]}
             >
-              <Text
-                style={[tw`text-lg font-semibold mb-1`, { color: colors.text }]}
-              >
-                {payload.name}
-              </Text>
+              <View style={tw`flex-row items-center justify-between`}>
+                <Text
+                  style={[
+                    tw`text-lg font-semibold mb-1`,
+                    { color: colors.text },
+                  ]}
+                >
+                  {payload.name}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    console.log('route', JSON.stringify(route, null, 2));
+                    nav.navigate('EditRouteScreen', { route });
+                  }}
+                  style={[
+                    tw`ml-2 rounded-lg p-2`,
+                    {
+                      backgroundColor: colors.main,
+                    },
+                  ]}
+                >
+                  <Edit2 width={14} height={14} color={colors.text} />
+                </TouchableOpacity>
+              </View>
 
               <View style={tw`flex-row items-center mb-1`}>
                 <Calendar width={14} height={14} color={colors.text} />
@@ -497,33 +517,17 @@ export default function RouteDraftScreen() {
               </View>
 
               {/* Driver + Change button */}
-              <View style={tw`flex-row items-center`}>
-                <User width={14} height={14} color={colors.text} />
-                <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
-                  Driver: #{route?.employee_id ?? payload.employee_id ?? '—'}
-                  {' / '}
-                  {(route?.profile?.first_name ?? '') +
-                    ' ' +
-                    (route?.profile?.last_name ?? '')}
-                </Text>
-
-                <TouchableOpacity
-                  onPress={() => setDriverModalOpen(true)}
-                  style={[
-                    tw`ml-2 px-2 py-1 rounded-lg`,
-                    {
-                      backgroundColor: colors.main,
-                      borderWidth: 0.5,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[tw`text-xs font-semibold`, { color: colors.text }]}
-                  >
-                    Change
+              <View style={tw`flex-row items-center justify-between`}>
+                <View style={tw`flex-row items-center`}>
+                  <User width={14} height={14} color={colors.text} />
+                  <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
+                    Driver: #{route?.employee_id ?? payload.employee_id ?? '—'}
+                    {' / '}
+                    {(route?.profile?.first_name ?? '') +
+                      ' ' +
+                      (route?.profile?.last_name ?? '')}
                   </Text>
-                </TouchableOpacity>
+                </View>
               </View>
 
               {!!payload.tags?.length && (
@@ -546,22 +550,6 @@ export default function RouteDraftScreen() {
                 Stops ({stops.length})
               </Text>
               <View style={tw`flex-row`}>
-                <TouchableOpacity
-                  onPress={persistOrder}
-                  disabled={savingOrder}
-                  style={[
-                    tw`px-3 py-2 rounded-xl mr-2`,
-                    {
-                      backgroundColor: colors.border,
-                      opacity: savingOrder ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={{ color: colors.text }}>
-                    {savingOrder ? 'Saving…' : 'Save Order'}
-                  </Text>
-                </TouchableOpacity>
-
                 <TouchableOpacity
                   onPress={openCreate}
                   style={[

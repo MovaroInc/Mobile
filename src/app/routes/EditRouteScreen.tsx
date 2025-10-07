@@ -1,4 +1,4 @@
-// src/app/routes/CreateRouteStep1Screen.tsx
+// src/app/routes/EditRouteScreen.tsx
 import React, { useMemo, useState, useEffect, useLayoutEffect } from 'react';
 import {
   View,
@@ -21,7 +21,6 @@ import {
   ChevronLeft,
   Tag,
   MapPin,
-  Clock,
   X as CloseIcon,
 } from 'react-native-feather';
 import DateTimePicker, {
@@ -35,16 +34,13 @@ import Field from '../../shared/components/inputs/Field';
 import SelectInput from '../../shared/components/inputs/SelectInput';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
 import DriverPickerModal from '../../shared/components/modals/DriverPickerModal';
-import { createDraftRoute } from '../../shared/lib/RouteHelpers';
+import { createDraftRoute, updateRouter } from '../../shared/lib/RouteHelpers';
 import { CreateInbox } from '../../shared/lib/inboxHelpers';
 
-type RouteParams = Partial<{
-  driverId: number | null;
-  serviceDateISO: string | null;
-}>;
+/* ───────────────── types ───────────────── */
 
 type Employee = {
-  id: number;
+  id: number; // employee id
   is_driver?: boolean | null;
   work_email?: string | null;
   phone?: string | null;
@@ -56,18 +52,33 @@ type Employee = {
   } | null;
 };
 
-export function combineISODateAndTimeUTC(isoDate: string, timeHHmm: string) {
-  // isoDate: 'YYYY-MM-DD' in LOCAL calendar
-  // timeHHmm: 'HH:mm' in LOCAL time
-  const [y, mo, d] = isoDate.split('-').map(Number);
-  const [h = 0, m = 0] = timeHHmm.split(':').map(Number);
+type RouteRecord = {
+  id: number;
+  business_id: number;
+  employee_id: number | null; // employee id
+  driver_id: number | null; // profile id
+  name: string;
+  service_date: string; // YYYY-MM-DD
+  status: string;
+  planned_start_at: string | null; // ISO
+  start_longitude: number | null;
+  start_latitude: number | null;
+  notes: string | null;
+  tags: string[] | null;
+  single_day?: boolean | null;
+  optimize?: boolean | null;
+  profile?: { id?: number | null } | null;
 
-  // Construct a local time (device timezone). JS Date will apply DST correctly.
-  const local = new Date(y, (mo ?? 1) - 1, d ?? 1, h, m, 0, 0);
+  // Optional text address fields (hydrate if you store them)
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+};
 
-  // Return UTC ISO string (with 'Z')
-  return local.toISOString();
-}
+/* ─────────────── helpers ─────────────── */
 
 function toHHmm(d: Date) {
   const h = `${d.getHours()}`.padStart(2, '0');
@@ -75,22 +86,49 @@ function toHHmm(d: Date) {
   return `${h}:${m}`;
 }
 
-export default function CreateRouteStep1Screen() {
+// ISO (UTC) → HH:mm in device local time (for the picker)
+function isoToLocalHHmm(iso?: string | null) {
+  if (!iso) return '08:00';
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+// Combine local YYYY-MM-DD + HH:mm → UTC ISO string
+export function combineISODateAndTimeUTC(isoDate: string, timeHHmm: string) {
+  const [y, mo, d] = isoDate.split('-').map(Number);
+  const [h = 0, m = 0] = timeHHmm.split(':').map(Number);
+  const local = new Date(y, (mo ?? 1) - 1, d ?? 1, h, m, 0, 0);
+  return local.toISOString();
+}
+
+/* ─────────────── screen ─────────────── */
+
+export default function EditRouteScreen() {
   const { colors } = useTheme();
   const nav = useNavigation<any>();
   const { params } = useRoute<any>();
+  const initialRoute: RouteRecord | undefined = params?.route; // pass as { route }
+
   const { business, profile } = useSession();
 
   const items = buildDateRange(8); // today + next 7
   const initialISO =
-    (params as RouteParams)?.serviceDateISO ??
+    initialRoute?.service_date ??
+    params?.serviceDateISO ??
     (items[0]?.iso || new Date().toISOString().slice(0, 10));
 
-  const [name, setName] = useState<string | null>(`New Route`);
+  // Basics
+  const [name, setName] = useState<string | null>(
+    initialRoute?.name ?? 'New Route',
+  );
   const [selectedIso] = useState(initialISO);
 
   // Time picker
-  const [plannedStart, setPlannedStart] = useState('08:00'); // HH:mm
+  const [plannedStart, setPlannedStart] = useState(
+    isoToLocalHHmm(initialRoute?.planned_start_at),
+  ); // HH:mm
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Drivers
@@ -99,28 +137,41 @@ export default function CreateRouteStep1Screen() {
   const [driverModalOpen, setDriverModalOpen] = useState(false);
 
   // Depot/Base
-  const [useBusinessHQ, setUseBusinessHQ] = useState(true);
-  const [line1, setLine1] = useState('');
-  const [line2, setLine2] = useState('');
-  const [city, setCity] = useState('');
-  const [region, setRegion] = useState('');
-  const [postal, setPostal] = useState('');
-  const [country, setCountry] = useState('US');
+  const hasCustomStart =
+    typeof initialRoute?.start_latitude === 'number' ||
+    typeof initialRoute?.start_longitude === 'number';
+  const [useBusinessHQ, setUseBusinessHQ] = useState(!hasCustomStart);
+  const [line1, setLine1] = useState(initialRoute?.address_line1 ?? '');
+  const [line2, setLine2] = useState(initialRoute?.address_line2 ?? '');
+  const [city, setCity] = useState(initialRoute?.city ?? '');
+  const [region, setRegion] = useState(initialRoute?.region ?? '');
+  const [postal, setPostal] = useState(initialRoute?.postal_code ?? '');
+  const [country, setCountry] = useState(initialRoute?.country ?? 'US');
 
   // Tags & Notes
-  const [tagsInput, setTagsInput] = useState('');
-  const [notes, setNotes] = useState('');
+  const [tagsInput, setTagsInput] = useState(
+    Array.isArray(initialRoute?.tags) ? initialRoute!.tags!.join(', ') : '',
+  );
+  const [notes, setNotes] = useState(initialRoute?.notes ?? '');
 
   // Address search
-  const [address, setAddress] = useState('');
+  const [address, setAddress] = useState<string>('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [query, setQuery] = useState('');
-  const [latitude, setLatitude] = useState(0);
-  const [longitude, setLongitude] = useState(0);
-  const [singleDay, setSingleDay] = useState(true);
-  const [routeOptimize, setRouteOptimize] = useState(true);
+  const [latitude, setLatitude] = useState(initialRoute?.start_latitude || 0);
+  const [longitude, setLongitude] = useState(
+    initialRoute?.start_longitude || 0,
+  );
+
+  // Flags
+  const [singleDay, setSingleDay] = useState(initialRoute?.single_day ?? true);
+  const [routeOptimize, setRouteOptimize] = useState(
+    initialRoute?.optimize ?? true,
+  );
 
   const [loading, setLoading] = useState(false);
+
+  /* ─────────────── data ─────────────── */
 
   useLayoutEffect(() => {
     if (!business?.id) return;
@@ -130,17 +181,38 @@ export default function CreateRouteStep1Screen() {
     })();
   }, [business?.id]);
 
-  // Preselect driver when params or driver list changes
+  // Preselect driver from the route record if present
   useEffect(() => {
     if (!allDrivers.length) return;
-    const fromParams = (params as RouteParams)?.driverId;
-    if (fromParams != null) {
-      const d = allDrivers.find(x => x.id === fromParams) || null;
-      setSelectedDriver(d);
-    } else if (!selectedDriver) {
+
+    // Prefer by employee_id (routes table uses employee ids)
+    if (initialRoute?.employee_id) {
+      const match =
+        allDrivers.find(x => x.id === initialRoute.employee_id) || null;
+      if (match) {
+        setSelectedDriver(match);
+        return;
+      }
+    }
+
+    // Fallback: match by profile id (route.profile.id)
+    if (initialRoute?.profile?.id) {
+      const match =
+        allDrivers.find(x => x.Profile?.id === initialRoute.profile!.id) ||
+        null;
+      if (match) {
+        setSelectedDriver(match);
+        return;
+      }
+    }
+
+    // Else default: first available
+    if (!selectedDriver) {
       setSelectedDriver(allDrivers[0] ?? null);
     }
-  }, [params, allDrivers, selectedDriver]);
+  }, [allDrivers, initialRoute?.employee_id, initialRoute?.profile?.id]);
+
+  /* ─────────────── derived ─────────────── */
 
   const headerTitle = useMemo(() => {
     const d = new Date(selectedIso);
@@ -153,29 +225,29 @@ export default function CreateRouteStep1Screen() {
     return isToday ? `Today — ${label}` : label;
   }, [selectedIso]);
 
+  const selectedDriverLabel = useMemo(() => {
+    if (!selectedDriver) return 'Select';
+    const fn = selectedDriver.Profile?.first_name?.trim() ?? '';
+    const ln = selectedDriver.Profile?.last_name?.trim() ?? '';
+    const full = `${fn} ${ln}`.trim();
+    return (
+      full ||
+      selectedDriver.work_email ||
+      selectedDriver.Profile?.email ||
+      'Select'
+    );
+  }, [selectedDriver]);
+
   const valid = useMemo(() => {
     if (!name?.trim()) return false;
     if (!selectedIso) return false;
     if (!selectedDriver?.id) return false;
     if (!plannedStart || !/^\d{2}:\d{2}$/.test(plannedStart)) return false;
-    if (!useBusinessHQ) {
-      if (!line1.trim() || !city.trim() || !region.trim()) {
-        return false;
-      }
-    }
     return true;
-  }, [
-    name,
-    selectedIso,
-    selectedDriver?.id,
-    plannedStart,
-    useBusinessHQ,
-    line1,
-    city,
-    region,
-  ]);
+  }, [name, selectedIso, selectedDriver?.id, plannedStart]);
 
-  // Address selection → decompose & geocode
+  /* ─────────────── address geocode ─────────────── */
+
   useEffect(() => {
     if (!address) return;
     const full = address.split(', ');
@@ -194,9 +266,13 @@ export default function CreateRouteStep1Screen() {
             'x-rapidapi-host': 'google-maps-geocoding3.p.rapidapi.com',
           },
         });
-        setLatitude(parseFloat(res.data.latitude));
-        setLongitude(parseFloat(res.data.longitude));
-      } catch {}
+        if (res?.data?.latitude && res?.data?.longitude) {
+          setLatitude(parseFloat(res.data.latitude));
+          setLongitude(parseFloat(res.data.longitude));
+        }
+      } catch {
+        // silent fail ok
+      }
     })();
   }, [address]);
 
@@ -219,11 +295,12 @@ export default function CreateRouteStep1Screen() {
         },
       });
       setSuggestions(response.data?.predictions || []);
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Error searching business addresses.');
+    } catch {
+      Alert.alert('Error', 'Error searching business addresses.');
     }
   };
+
+  /* ─────────────── inbox notify (optional) ─────────────── */
 
   const notifyRouteDraftCreated = async ({
     businessId,
@@ -233,6 +310,14 @@ export default function CreateRouteStep1Screen() {
     plannedStartISO,
     creatorProfileId,
     driverProfileId,
+  }: {
+    businessId: number;
+    routeId: number;
+    routeName: string;
+    serviceDateISO: string;
+    plannedStartISO: string;
+    creatorProfileId: number | null;
+    driverProfileId: number | null;
   }) => {
     const basePayload = {
       businessId,
@@ -255,18 +340,16 @@ export default function CreateRouteStep1Screen() {
       single_day: singleDay,
     };
 
-    // Notify creator/manager
     await CreateInbox({
       ...basePayload,
       profile_id: creatorProfileId,
       dedupe_key: `route.draft.created:${routeId}:${creatorProfileId}`,
     });
 
-    // Notify assigned driver (if any)
     if (driverProfileId) {
       await CreateInbox({
         ...basePayload,
-        title: 'YA new route (draft) was created',
+        title: 'A new route (draft) was created',
         body: `“${routeName}” (${serviceDateISO}) has been assigned.`,
         profile_id: driverProfileId,
         dedupe_key: `route.draft.created:${routeId}:${driverProfileId}`,
@@ -274,75 +357,93 @@ export default function CreateRouteStep1Screen() {
     }
   };
 
-  const onNext = async () => {
-    setLoading(true);
-    if (!valid) {
-      Alert.alert('Missing info', 'Please complete required fields.');
-      return;
-    }
-
-    const payload = {
-      business_id: business?.id ?? null,
-      driver_id: selectedDriver?.Profile?.id ?? null, // profile id (if your table expects it)
-      employee_id: selectedDriver?.id ?? null, // employee id
-      name: name!.trim(),
-      service_date: selectedIso, // YYYY-MM-DD
-      status: 'draft' as const,
-      planned_start_at: combineISODateAndTimeUTC(selectedIso, plannedStart),
-      start_longitude: business.longitude || 0,
-      start_latitude: business.latitude || 0,
-      tags: tagsInput
-        .split(',')
-        .map(t => t.trim())
-        .filter(Boolean),
-      notes: notes || null,
-    };
-
-    const draft = await createDraftRoute(payload);
-
-    console.log('draft', draft);
-    setLoading(false);
-    if (draft.success) {
-      await notifyRouteDraftCreated({
-        businessId: business!.id,
-        routeId: draft.data.id,
-        routeName: payload.name,
-        serviceDateISO: payload.service_date,
-        plannedStartISO: payload.planned_start_at,
-        creatorProfileId: profile?.id ?? null, // <-- your current user's profile id
-        driverProfileId: selectedDriver?.Profile?.id ?? null,
-      });
-      nav.navigate('RouteDraftScreen', {
-        routeId: draft.data.id,
-        payload,
-      });
-    } else {
-      Alert.alert('Error', draft.error.message);
-    }
-  };
+  /* ─────────────── actions ─────────────── */
 
   const handlePickTime = (_: DateTimePickerEvent, selected?: Date) => {
     if (selected) setPlannedStart(toHHmm(selected));
     if (Platform.OS === 'android') setShowTimePicker(false);
   };
 
-  const selectedDriverLabel = useMemo(() => {
-    if (!selectedDriver) return 'Select';
-    const fn = selectedDriver.Profile?.first_name?.trim() ?? '';
-    const ln = selectedDriver.Profile?.last_name?.trim() ?? '';
-    const full = `${fn} ${ln}`.trim();
-    return (
-      full ||
-      selectedDriver.work_email ||
-      selectedDriver.Profile?.email ||
-      'Select'
-    );
-  }, [selectedDriver]);
+  const onSave = async () => {
+    setLoading(true);
+
+    if (!valid) {
+      setLoading(false);
+      Alert.alert('Missing info', 'Please complete required fields.');
+      return;
+    }
+
+    const payload = {
+      business_id: business?.id ?? initialRoute?.business_id ?? null,
+      driver_id: selectedDriver?.Profile?.id ?? null, // profile id
+      employee_id: selectedDriver?.id ?? null, // employee id
+      name: name!.trim(),
+      service_date: selectedIso, // YYYY-MM-DD
+      status: initialRoute ? initialRoute.status : ('draft' as const),
+      planned_start_at: combineISODateAndTimeUTC(selectedIso, plannedStart),
+      start_longitude: useBusinessHQ ? 0 : longitude || 0,
+      start_latitude: useBusinessHQ ? 0 : latitude || 0,
+      tags: tagsInput
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean),
+      notes: notes || null,
+      single_day: singleDay,
+      optimize: routeOptimize,
+    };
+
+    try {
+      if (initialRoute?.id) {
+        // EDIT EXISTING
+        const resp = await updateRouter(initialRoute.id, payload);
+        setLoading(false);
+
+        if (!resp.success) {
+          throw new Error(
+            resp.message || resp.error?.message || 'Update failed',
+          );
+        }
+
+        Alert.alert('Saved', 'Route updated successfully.');
+        nav.goBack();
+      } else {
+        // CREATE NEW DRAFT
+        const draft = await createDraftRoute(payload as any);
+        setLoading(false);
+
+        if (draft.success) {
+          await notifyRouteDraftCreated({
+            businessId: (business?.id ?? payload.business_id)!,
+            routeId: draft.data.id,
+            routeName: payload.name,
+            serviceDateISO: payload.service_date,
+            plannedStartISO: payload.planned_start_at,
+            creatorProfileId: profile?.id ?? null,
+            driverProfileId: selectedDriver?.Profile?.id ?? null,
+          });
+          nav.navigate('RouteDraftScreen', {
+            routeId: draft.data.id,
+            payload,
+          });
+        } else {
+          Alert.alert(
+            'Error',
+            draft.error?.message || 'Failed to create route',
+          );
+        }
+      }
+    } catch (e: any) {
+      setLoading(false);
+      Alert.alert('Error', e?.message || 'Something went wrong');
+    }
+  };
+
+  /* ─────────────── UI ─────────────── */
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[tw`flex-1 `, { backgroundColor: colors.bg }]}
+      style={[tw`flex-1`, { backgroundColor: colors.bg }]}
     >
       {/* Header */}
       <View style={tw`px-2 pt-4 pb-4 flex-row items-center`}>
@@ -351,12 +452,12 @@ export default function CreateRouteStep1Screen() {
         </TouchableOpacity>
         <View style={tw`pl-2 flex-row items-center justify-between`}>
           <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            New Route
+            {initialRoute ? 'Edit Route' : 'New Route'}
           </Text>
         </View>
       </View>
 
-      {/* Use FlatList so inner virtualized lists (e.g., suggestions) aren’t nested inside a ScrollView */}
+      {/* Body (FlatList to avoid nested virtualized lists warnings) */}
       <FlatList
         data={[{ key: 'form' }]}
         keyExtractor={item => item.key}
@@ -428,7 +529,7 @@ export default function CreateRouteStep1Screen() {
             <Row style={tw`items-center mb-2`}>
               <MapPin width={16} height={16} color="#9CA3AF" />
               <Text style={[tw`ml-2`, { color: colors.text }]}>
-                Optimize Route with Gemeni AI
+                Optimize Route with Gemini AI
               </Text>
               <View style={tw`flex-1`} />
               <Switch
@@ -438,7 +539,9 @@ export default function CreateRouteStep1Screen() {
               />
             </Row>
 
-            {/* Starting location */}
+            {/* Starting location (toggle to use HQ or custom) */}
+
+            {/* Toggle for HQ vs. custom */}
 
             {/* Tags & Notes */}
             <SectionTitle text="Tags & Notes (optional)" />
@@ -468,26 +571,29 @@ export default function CreateRouteStep1Screen() {
                 },
               ]}
             />
-
-            {/* Footer CTA */}
           </>
         )}
       />
+
+      {/* Footer CTA */}
       <View style={tw`px-4`}>
         <TouchableOpacity
-          onPress={onNext}
-          disabled={!valid}
+          onPress={onSave}
+          disabled={!valid || loading}
           style={[
             tw`px-4 py-3 rounded-2xl items-center mb-8`,
             {
               backgroundColor: valid ? colors.brand.primary : colors.border,
+              opacity: loading ? 0.8 : 1,
             },
           ]}
         >
           {loading ? (
-            <ActivityIndicator size="small" color={colors.text} />
+            <ActivityIndicator size="small" />
           ) : (
-            <Text style={tw`text-white font-semibold`}>Next</Text>
+            <Text style={tw`text-white font-semibold`}>
+              {initialRoute ? 'Save Changes' : 'Create Draft'}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -562,7 +668,8 @@ export default function CreateRouteStep1Screen() {
   );
 }
 
-/** UI bits */
+/* ─────────────── UI bits ─────────────── */
+
 function SectionTitle({ text }: { text: string }) {
   const { colors } = useTheme();
   return (
@@ -575,6 +682,7 @@ function SectionTitle({ text }: { text: string }) {
     </View>
   );
 }
+
 function Row({ children, style }: { children: React.ReactNode; style?: any }) {
   return <View style={[tw`flex-row`, style]}>{children}</View>;
 }

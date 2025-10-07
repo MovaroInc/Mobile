@@ -66,3 +66,13 @@ export const reassignDriver = async (routeId: number, payload: any) => {
   }>(`/routes/update-route/${routeId}`, payload);
   return res.data;
 };
+
+export const updateRouter = async (routeId: number, payload: any) => {
+  const res = await api.put<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/routes/update-route/${routeId}`, payload);
+  return res.data;
+};
