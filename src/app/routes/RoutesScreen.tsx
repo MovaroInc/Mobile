@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import tw from 'twrnc';
 import { useTheme } from '../../shared/hooks/useTheme';
@@ -21,15 +22,24 @@ import {
   CheckCircle,
   AlertTriangle,
   BarChart2,
+  Mail,
+  Phone,
+  ChevronDown,
+  MapPin,
+  Edit2,
+  Plus,
+  Trash2,
 } from 'react-native-feather';
 import { buildDateRange } from '../../shared/utils/dates';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSession } from '../../state/useSession';
 import {
+  deleteRoute,
   getDraftRoutesByBusinessId,
   getRoutesByBusinessId,
 } from '../../shared/lib/RouteHelpers';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
+import { phoneDigits } from '../../shared/utils/FormatPhoneNumber';
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
@@ -115,6 +125,11 @@ function toHM(mins: number) {
   return `${h}h ${m}m`;
 }
 
+const convertToYYYYMMDD = (date: string) => {
+  const [day, month, year] = date.split('/');
+  return `${year}-${month}-${day}`;
+};
+
 /* ────────────────────────── Screen ─────────────────────────── */
 
 export default function RouteScreen() {
@@ -129,7 +144,11 @@ export default function RouteScreen() {
   const initialIso =
     items.find(i => i.iso === todayLocalISO)?.iso ?? items[0].iso;
 
-  const [selectedIso, setSelectedIso] = useState(initialIso);
+  const [selectedIso, setSelectedIso] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+
+  const selectedDate = convertToYYYYMMDD(new Date().toLocaleDateString());
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -146,21 +165,20 @@ export default function RouteScreen() {
         try {
           // drivers
           const drvRes = await getDrivers(business.id);
-          const drvList: UiDriver[] = (drvRes?.data ?? [])
-            .filter((e: Employee) => e.is_driver !== false)
-            .map((e: Employee) => ({ id: e.id, name: toDriverName(e) }));
-          setDrivers(drvList);
+          setDrivers(drvRes?.data);
 
           // routes (normalize shapes + dates)
-          console.log('onRefresh', business.id, selectedIso);
-          const rRes = await getRoutesByBusinessId(business.id, selectedIso);
+          console.log('onRefresh', business.id, selectedDate);
+          const rRes = await getRoutesByBusinessId(business.id, selectedDate);
+          console.log('rRes', rRes);
           if (rRes.error) {
             throw new Error('Failed to fetch routes: ' + rRes.error.message);
           }
           const rResDraft = await getDraftRoutesByBusinessId(
             business.id,
-            selectedIso,
+            selectedDate,
           );
+          console.log('rResDraft', rResDraft);
           if (rResDraft.error) {
             throw new Error(
               'Failed to fetch draft routes: ' + rResDraft.error.message,
@@ -182,8 +200,8 @@ export default function RouteScreen() {
     if (!business?.id) return;
     setRefreshing(true);
     try {
-      console.log('onRefresh', business.id, selectedIso);
-      const rRes = await getRoutesByBusinessId(business.id, selectedIso);
+      console.log('onRefresh', business.id, selectedDate);
+      const rRes = await getRoutesByBusinessId(business.id, selectedDate);
       if (rRes.error) {
         throw new Error('Failed to fetch routes: ' + rRes.error.message);
       }
@@ -203,11 +221,30 @@ export default function RouteScreen() {
     }
   };
 
+  const confirmDeleteRoute = async (routeId: number) => {
+    console.log('route id', routeId);
+    Alert.alert('Delete Route', 'Are you sure you want to delete this route?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const response = await deleteRoute(routeId);
+          console.log('deleteRoute response', response);
+          if (response.success) {
+            onRefresh();
+          } else {
+            Alert.alert('Error', response.error.message);
+          }
+        },
+      },
+    ]);
+  };
   // Derived view for the selected *local* day
   const view = useMemo(() => {
     // Filter by normalized YMD
     const dayRoutes = routes.filter(
-      r => ymdOnly(r.service_date) === selectedIso,
+      r => ymdOnly(r.service_date) === selectedDate,
     );
     const allRoutes = routes;
 
@@ -349,7 +386,40 @@ export default function RouteScreen() {
           </ScrollView>
         </View>
       </View>
+      <View style={tw`px-4`}>
+        <View style={tw`flex-row items-center mb-2`}>
+          <Calendar width={16} height={16} color={colors.text} />
+          <Text
+            style={[tw`ml-2 text-base font-semibold`, { color: colors.text }]}
+          >
+            {view.headerTitle}
+          </Text>
+        </View>
 
+        {/* Summary row */}
+        <View style={tw`flex-row mb-2`}>
+          <SummaryCard
+            Icon={Map}
+            label="Routes"
+            value={String(view.summary.totalRoutes)}
+            colors={colors}
+          />
+          <View style={tw`w-2`} />
+          <SummaryCard
+            Icon={Navigation}
+            label="Stops"
+            value={String(view.summary.totalStops)}
+            colors={colors}
+          />
+          <View style={tw`w-2`} />
+          <SummaryCard
+            Icon={Truck}
+            label="Unassigned"
+            value={String(view.summary.unassignedDrivers)}
+            colors={colors}
+          />
+        </View>
+      </View>
       {/* Content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -360,38 +430,6 @@ export default function RouteScreen() {
       >
         <View style={tw`px-4 mt-3`}>
           {/* Day header */}
-          <View style={tw`flex-row items-center mb-2`}>
-            <Calendar width={16} height={16} color={colors.text} />
-            <Text
-              style={[tw`ml-2 text-base font-semibold`, { color: colors.text }]}
-            >
-              {view.headerTitle}
-            </Text>
-          </View>
-
-          {/* Summary row */}
-          <View style={tw`flex-row mb-2`}>
-            <SummaryCard
-              Icon={Map}
-              label="Routes"
-              value={String(view.summary.totalRoutes)}
-              colors={colors}
-            />
-            <View style={tw`w-2`} />
-            <SummaryCard
-              Icon={Navigation}
-              label="Stops"
-              value={String(view.summary.totalStops)}
-              colors={colors}
-            />
-            <View style={tw`w-2`} />
-            <SummaryCard
-              Icon={Truck}
-              label="Unassigned"
-              value={String(view.summary.unassignedDrivers)}
-              colors={colors}
-            />
-          </View>
 
           {/* Drivers list */}
           <FlatList
@@ -411,7 +449,8 @@ export default function RouteScreen() {
               </Text>
             }
             renderItem={({ item }) => {
-              const route = view.driverAssignments[item.id] ?? null;
+              const route =
+                routes.filter(r => r.employee_id === item.id)[0] ?? null;
               return (
                 <DriverRow
                   driver={item}
@@ -436,7 +475,7 @@ export default function RouteScreen() {
           />
 
           {/* Routes preview */}
-          {view.allRoutes.length > 0 ? (
+          {/* {view.allRoutes.length > 0 ? (
             <View style={tw`mt-3`}>
               <Text
                 style={[tw`text-xl mb-2 font-semibold`, { color: colors.text }]}
@@ -515,13 +554,13 @@ export default function RouteScreen() {
             <Text style={[tw`text-xs mt-4`, { color: '#9CA3AF' }]}>
               No routes for this day.
             </Text>
-          )}
+          )} */}
           {draftRoutes.length > 0 ? (
             <View style={tw`mt-3`}>
               <Text
                 style={[tw`text-xl mb-2 font-semibold`, { color: colors.text }]}
               >
-                Draft Routes
+                Unassigned Routes
               </Text>
               {draftRoutes.map(r => {
                 const stopsCount = r.stops?.length ?? 0;
@@ -564,7 +603,28 @@ export default function RouteScreen() {
                       >
                         {r.name}
                       </Text>
-                      <StatusPill status={r.status} colors={colors} />
+                      <View style={tw`flex-row items-center`}>
+                        <StatusPill status={r.status} colors={colors} />
+                        <View
+                          style={[
+                            tw`ml-2 p-2 border rounded-2`,
+                            {
+                              backgroundColor: colors.border,
+                              borderColor: colors.border,
+                            },
+                          ]}
+                        >
+                          <Trash2
+                            width={14}
+                            height={14}
+                            color={'red'}
+                            style={tw``}
+                            onPress={() => {
+                              confirmDeleteRoute(r.id);
+                            }}
+                          />
+                        </View>
+                      </View>
                     </View>
 
                     <View style={tw`flex-row items-center mt-2`}>
@@ -646,6 +706,7 @@ function DriverRow({
   onCreate: () => void;
   onOpen: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   return (
     <View
       style={[
@@ -654,45 +715,165 @@ function DriverRow({
       ]}
     >
       <View style={tw`flex-row items-center justify-between`}>
-        <Text style={[tw`text-base font-semibold`, { color: colors.text }]}>
-          {driver.name}
+        <Text style={[tw`text-lg font-semibold`, { color: colors.text }]}>
+          {driver.Profile?.first_name} {driver.Profile?.last_name}
         </Text>
         {route ? (
-          <TouchableOpacity onPress={onOpen} style={tw`ml-3`}>
-            <Text
-              style={[tw`text-xs font-semibold`, { color: colors.primary }]}
-            >
-              Open
-            </Text>
+          <TouchableOpacity
+            onPress={onOpen}
+            style={[tw`ml-3 p-2 rounded-2`, { backgroundColor: colors.border }]}
+          >
+            <Edit2 width={14} height={14} color={colors.muted} />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={onCreate} style={tw`ml-3`}>
-            <Text
-              style={[tw`text-xs font-semibold`, { color: colors.primary }]}
-            >
-              Create
-            </Text>
+          <TouchableOpacity
+            onPress={onCreate}
+            style={[tw`ml-3 p-2 rounded-2`, { backgroundColor: colors.border }]}
+          >
+            <Plus width={14} height={14} color={colors.muted} />
           </TouchableOpacity>
         )}
       </View>
+      <View style={tw`flex-row items-center justify-start mt-1`}>
+        <View style={tw`flex-row items-center`}>
+          <Mail width={14} height={14} color={colors.muted} />
+          <Text style={[tw`text-xs ml-1`, { color: colors.muted }]}>
+            {driver.Profile?.email}
+          </Text>
+        </View>
+        <View style={tw`flex-row items-center ml-2`}>
+          <Phone width={14} height={14} color={colors.muted} />
+          <Text style={[tw`text-xs ml-1`, { color: colors.muted }]}>
+            {phoneDigits(driver.Profile?.phone)}
+          </Text>
+        </View>
+      </View>
+      <View
+        style={[
+          tw`w-full h-px rounded-full mt-2 bg-opacity-50`,
+          { backgroundColor: colors.muted },
+        ]}
+      ></View>
 
       <View style={tw`flex-row items-center mt-2`}>
         {route ? (
-          <>
-            <CheckCircle width={14} height={14} color="#10B981" />
-            <Text style={tw`text-gray-300 text-xs ml-1`} numberOfLines={1}>
-              {route.name} • {route.stops?.length ?? 0} stops
-            </Text>
-          </>
+          <View style={tw`w-full flex-row items-center justify-between`}>
+            <View style={tw`flex-row items-center`}>
+              {route.status === 'dispatched' ? (
+                <View
+                  style={[
+                    tw`w-2 h-2 rounded-full`,
+                    {
+                      backgroundColor: colors.accent,
+                    },
+                  ]}
+                />
+              ) : (
+                <View style={tw`w-2 h-2 rounded-full bg-orange-400`} />
+              )}
+              <View style={tw`flex flex-row items-center`}>
+                <Text
+                  style={tw`text-gray-300 text-base ml-2`}
+                  numberOfLines={1}
+                >
+                  {route.name} • {route.stops?.length ?? 0} stops
+                </Text>
+                <View style={tw`w-2`} />
+                <Text
+                  style={[
+                    tw`text-black font-semibold text-xs px-2 py-0.5 rounded-full`,
+                    { backgroundColor: colors.accent },
+                  ]}
+                >
+                  {route.status}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[tw`p-2 rounded-2`, { backgroundColor: colors.border }]}
+              onPress={() => setExpanded(!expanded)}
+            >
+              <ChevronDown
+                width={14}
+                height={14}
+                color={colors.muted}
+                style={expanded ? { transform: [{ rotate: '180deg' }] } : {}}
+              />
+            </TouchableOpacity>
+          </View>
         ) : (
-          <>
-            <AlertTriangle width={14} height={14} color="#FBBF24" />
-            <Text style={tw`text-gray-300 text-xs ml-1`}>
+          <View style={tw`flex-row items-center mt-1`}>
+            <View style={tw`w-2 h-2 rounded-full bg-gray-400`} />
+            <Text style={tw`text-gray-300 text-base ml-2`}>
               No dispatched route assigned
             </Text>
-          </>
+          </View>
         )}
       </View>
+      {expanded && route && (
+        <View style={tw`flex-row items-center mt-2`}>
+          <Text style={tw`text-xs`}>
+            {route?.stops?.map(s => {
+              return (
+                <View style={tw`flex-row items-start`}>
+                  <View>
+                    <View style={tw`w-2 h-2 rounded-full bg-gray-400 mt-2`} />
+                    <View style={tw`w-2 rounded-full overflow-hidden py-2`}>
+                      <View style={tw`flex-1 bg-gray-700 rounded-full`} />
+                    </View>
+                  </View>
+                  <View>
+                    <Text style={tw`text-gray-300 text-base ml-2`}>
+                      {s.business_name} ({s.stop_type}) • {s.status}
+                    </Text>
+                    <View style={tw`flex-row items-center mt-1 ml-1.5`}>
+                      <MapPin width={14} height={14} color={colors.muted} />
+                      <Text style={tw`text-gray-300 text-xs ml-2`}>
+                        {s.address_line1} {s.address_line2} {s.city} {s.region}
+                      </Text>
+                    </View>
+                    <View style={tw`flex-row items-center mt-2 ml-1.5`}>
+                      <Phone width={14} height={14} color={colors.muted} />
+                      <Text style={tw`text-gray-300 text-xs ml-2`}>
+                        {s.contact_phone}
+                      </Text>
+                    </View>
+                    <View style={tw`flex-row items-center mt-2 ml-1`}>
+                      {s.requirements.id_required && (
+                        <View style={tw`px-2 py-1 rounded-full bg-gray-700`}>
+                          <Text style={tw`text-xs`}>
+                            {s.requirements.id_required ? 'ID Required' : ''}
+                          </Text>
+                        </View>
+                      )}
+                      {s.requirements.contact_before && (
+                        <View
+                          style={tw`px-2 py-1 rounded-full bg-gray-700 ml-2`}
+                        >
+                          <Text style={tw`text-xs`}>
+                            {s.requirements.contact_before
+                              ? 'Contact Before'
+                              : ''}
+                          </Text>
+                        </View>
+                      )}
+                      {s.requirements.contactless && (
+                        <View
+                          style={tw`px-2 py-1 rounded-full bg-gray-700 ml-2`}
+                        >
+                          <Text style={tw`text-xs`}>
+                            {s.requirements.contactless ? 'Contactless' : ''}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }

@@ -359,7 +359,7 @@ export default function AddStopScreen1() {
         contact_phone: business.phone ?? '',
         contact_email: business.email ?? '',
         business_name: 'Base',
-        sequence: 0, // append
+        sequence: stopsCount + 1, // append
       };
 
       const res = await createStop(payload);
@@ -412,7 +412,7 @@ export default function AddStopScreen1() {
         contact_phone: '',
         contact_email: '',
         business_name: 'Lunch',
-        sequence: 0, // append
+        sequence: stopsCount + 1, // append
         is_lunch: true,
         expected_duration: lunchMinutes,
         auto_trigger: lunchAuto,

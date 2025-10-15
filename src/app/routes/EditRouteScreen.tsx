@@ -22,6 +22,9 @@ import {
   Tag,
   MapPin,
   X as CloseIcon,
+  Map,
+  GitPullRequest,
+  Check,
 } from 'react-native-feather';
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -168,6 +171,12 @@ export default function EditRouteScreen() {
   const [routeOptimize, setRouteOptimize] = useState(
     initialRoute?.optimize ?? true,
   );
+
+  const [driverDisplay, setDriverDisplay] = useState(
+    initialRoute?.driver_display ?? 'full',
+  );
+
+  const [autoTriggerStops, setAutoTriggerStops] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
@@ -336,8 +345,12 @@ export default function EditRouteScreen() {
         routeName,
         serviceDateISO,
         plannedStartISO,
+        optimize: routeOptimize,
+        driver_display: driverDisplay,
       },
       single_day: singleDay,
+      driver_display: driverDisplay,
+      optimize: routeOptimize,
     };
 
     await CreateInbox({
@@ -364,6 +377,13 @@ export default function EditRouteScreen() {
     if (Platform.OS === 'android') setShowTimePicker(false);
   };
 
+  function todayLocalYYYYMMDD(d = new Date()): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   const onSave = async () => {
     setLoading(true);
 
@@ -378,7 +398,7 @@ export default function EditRouteScreen() {
       driver_id: selectedDriver?.Profile?.id ?? null, // profile id
       employee_id: selectedDriver?.id ?? null, // employee id
       name: name!.trim(),
-      service_date: selectedIso, // YYYY-MM-DD
+      service_date: initialRoute?.service_date ?? todayLocalYYYYMMDD(), // YYYY-MM-DD
       status: initialRoute ? initialRoute.status : ('draft' as const),
       planned_start_at: combineISODateAndTimeUTC(selectedIso, plannedStart),
       start_longitude: useBusinessHQ ? 0 : longitude || 0,
@@ -390,6 +410,8 @@ export default function EditRouteScreen() {
       notes: notes || null,
       single_day: singleDay,
       optimize: routeOptimize,
+      driver_display: driverDisplay,
+      auto_trigger_stops: autoTriggerStops,
     };
 
     try {
@@ -511,20 +533,6 @@ export default function EditRouteScreen() {
               </View>
             </View>
 
-            <SectionTitle text="Route Type" />
-            <Row style={tw`items-center mb-2`}>
-              <MapPin width={16} height={16} color="#9CA3AF" />
-              <Text style={[tw`ml-2`, { color: colors.text }]}>
-                Single Shift
-              </Text>
-              <View style={tw`flex-1`} />
-              <Switch
-                value={singleDay}
-                onValueChange={setSingleDay}
-                thumbColor={singleDay ? colors.primary : '#666'}
-              />
-            </Row>
-
             <SectionTitle text="Route Optimization" />
             <Row style={tw`items-center mb-2`}>
               <MapPin width={16} height={16} color="#9CA3AF" />
@@ -536,6 +544,49 @@ export default function EditRouteScreen() {
                 value={routeOptimize}
                 onValueChange={setRouteOptimize}
                 thumbColor={routeOptimize ? colors.primary : '#666'}
+              />
+            </Row>
+
+            <SectionTitle text="Route Display" />
+            <Row style={tw`items-center mb-2`}>
+              <View style={tw`flex-row items-start`}>
+                <GitPullRequest width={16} height={16} color="#9CA3AF" />
+                <View style={tw`ml-2`}>
+                  <Text style={[tw``, { color: colors.text }]}>
+                    Driver Route Display
+                  </Text>
+                  {driverDisplay === 'full' ? (
+                    <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
+                      Disable to show 1 stop at a time for drivers
+                    </Text>
+                  ) : (
+                    <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
+                      Enable to show the full route for drivers
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <View style={tw`flex-1`} />
+              <Switch
+                value={driverDisplay === 'full'}
+                onValueChange={() =>
+                  setDriverDisplay(driverDisplay === 'full' ? 'single' : 'full')
+                }
+                thumbColor={driverDisplay === 'full' ? colors.primary : '#666'}
+              />
+            </Row>
+
+            <SectionTitle text="Auto Trigger Stops" />
+            <Row style={tw`items-center mb-2`}>
+              <Check width={16} height={16} color="#9CA3AF" />
+              <Text style={[tw`ml-2`, { color: colors.text }]}>
+                After stop completion, automatically trigger stop updates
+              </Text>
+              <View style={tw`flex-1`} />
+              <Switch
+                value={autoTriggerStops}
+                onValueChange={setAutoTriggerStops}
+                thumbColor={autoTriggerStops ? colors.primary : '#666'}
               />
             </Row>
 

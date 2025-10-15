@@ -47,6 +47,17 @@ export const createStopsPhotos = async payload => {
   return res.data;
 };
 
+export const getStopById = async stopId => {
+  console.log('getStopById', stopId);
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/stops/get-stop-by-id/${stopId}`);
+  return res.data;
+};
+
 export const updateStop = async (stopId: number, payload: any) => {
   console.log('updateStop', stopId, payload);
   const res = await api.put<{

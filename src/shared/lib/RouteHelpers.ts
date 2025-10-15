@@ -57,6 +57,32 @@ export const publishRouteWithStops = async (routeId: number, payload: any) => {
   return res.data;
 };
 
+export const grabRouteProfileAndDate = async (
+  profileId: number,
+  date: string,
+) => {
+  console.log('grabRouteProfileAndDate profileId', profileId);
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/routes/get-route-profile-and-date/${profileId}/${date}`);
+  console.log('grabRouteProfileAndDate res', res);
+  return res.data;
+};
+
+export const grabRouteCount = async (businessId: number) => {
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/routes/get-route-count-for-business/${businessId}`);
+  console.log('grabRouteCount res', res);
+  return res.data;
+};
+
 export const reassignDriver = async (routeId: number, payload: any) => {
   const res = await api.put<{
     success: boolean;
@@ -74,5 +100,50 @@ export const updateRouter = async (routeId: number, payload: any) => {
     error: any | null;
     message: string | null;
   }>(`/routes/update-route/${routeId}`, payload);
+  return res.data;
+};
+
+export const grabRouteBreaks = async (routeId: number) => {
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/route-breaks/get-route-breaks-by-route-id/${routeId}`);
+  console.log('grabRouteBreaks res', res);
+  return res.data;
+};
+
+export const newRouteBreak = async (payload: any) => {
+  const res = await api.post<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/route-breaks/add-route-break`, payload);
+  console.log('newRouteBreak res', res);
+  return res.data;
+};
+
+export const updateRouteBreak = async (routeBreakId: number, payload: any) => {
+  const res = await api.put<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/route-breaks/update-route-break/${routeBreakId}`, payload);
+  console.log('updateRouteBreak res', res);
+  return res.data;
+};
+
+export const deleteRoute = async (routeId: number) => {
+  console.log('deleteRoute routeId', routeId);
+  const res = await api.delete<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/routes/delete-route/${routeId}`);
+  console.log('updateRouteBreak res', res);
   return res.data;
 };

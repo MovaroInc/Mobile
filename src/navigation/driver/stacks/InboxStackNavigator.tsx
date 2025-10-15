@@ -1,18 +1,17 @@
 // src/navigation/stacks/AuthStack.tsx
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import LoginScreen from '../../app/auth/LoginScreen';
-import HomeScreen from '../../app/home/HomeScreen';
-import DriverHomeScreen from '../../app/home/DriverHomeScreen';
+import DriversScreen from '../../../app/drivers/DriversScreen';
+import DriverInviteScreen from '../../../app/drivers/DriverInviteScreen';
 type AuthParamList = {
-  Home: undefined;
+  Drivers: undefined;
 };
 const Stack = createStackNavigator<AuthParamList>();
 
-export default function DriverNavigation() {
+export default function InboxStackNavigation() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Home" component={DriverHomeScreen} />
+      <Stack.Screen name="Drivers" component={DriversScreen} />
     </Stack.Navigator>
   );
 }

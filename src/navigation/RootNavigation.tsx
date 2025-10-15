@@ -14,6 +14,7 @@ import UserTab from './users/tabs/UserTabNavigation';
 import DriverNavigation from './driver/DriverNavigation';
 import SubscriptionNavigation from './subscription/SubscriptionNavigation';
 import { linking } from '../shared/lib/linking';
+import DriverTabs from './driver/tabs/DriverTabs';
 
 export default function RootNavigator() {
   const { isDark, colors } = useTheme();
@@ -51,7 +52,7 @@ export default function RootNavigator() {
         ) : profile?.role === 'owner' ? (
           <UserTab />
         ) : (
-          <DriverNavigation />
+          <DriverTabs />
         )}
       </SafeAreaView>
     </NavigationContainer>

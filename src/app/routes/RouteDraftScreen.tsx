@@ -3,7 +3,6 @@ import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useState,
 } from 'react';
 import {
@@ -49,13 +48,54 @@ import {
   publishRouteWithStops,
   reassignDriver,
 } from '../../shared/lib/RouteHelpers';
-import { deleteStop, updateStopSequence } from '../../shared/lib/StopsHelpers';
+import {
+  createStop,
+  deleteStop,
+  updateStopSequence,
+} from '../../shared/lib/StopsHelpers';
 import { CreateInbox } from '../../shared/lib/inboxHelpers';
 import { useSession } from '../../state/useSession';
 
-// NEW: driver helpers
+// Driver helpers
 import { getDrivers } from '../../shared/lib/DriversHelpers';
 import DriverPickerModal from '../../shared/components/modals/DriverPickerModal';
+
+// Optimizer call (only import the API call; we define ordering locally)
+import { createOptimizedRoute } from '../../shared/lib/optimications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+/* ───────────────────────── Utils ───────────────────────── */
+
+const convertToYYYYMMDD = (date: string) => {
+  const [day, month, year] = date.split('/');
+  return `${year}-${month}-${day}`;
+};
+
+const selectedDate = convertToYYYYMMDD(new Date().toLocaleDateString());
+
+function toHHmm(d: Date) {
+  const h = `${d.getHours()}`.padStart(2, '0');
+  const m = `${d.getMinutes()}`.padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+function formatHMAmPm(iso: string | null | undefined) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  try {
+    return d.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    let h = d.getHours();
+    const m = `${d.getMinutes()}`.padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${m} ${ampm}`;
+  }
+}
 
 /* ───────────────────────── Types ───────────────────────── */
 
@@ -90,6 +130,7 @@ type Stop = {
   id: number;
   route_id: number;
   customer_name: string | null;
+  business_name?: string | null;
   address_line1: string | null;
   city: string | null;
   region: string | null;
@@ -98,55 +139,19 @@ type Stop = {
   latitude: number | null;
   longitude: number | null;
   planned_service_minutes: number | null;
-  window_start: string | null; // HH:mm (optional)
-  window_end: string | null; // HH:mm (optional)
+  window_start: string | null; // HH:mm
+  window_end: string | null; // HH:mm
   notes: string | null;
-  sequence: number; // order
+  sequence: number;
   status?: StopStatus;
 };
 
-type StopInput = Partial<Stop> & { route_id: number };
+const metersToMiles1dp = (m?: number | null) =>
+  typeof m === 'number' && isFinite(m)
+    ? Math.round((m / 1609.344) * 10) / 10
+    : null;
 
-type Employee = {
-  id: number; // employee id
-  is_driver?: boolean | null;
-  work_email?: string | null;
-  phone?: string | null;
-  Profile?: {
-    id?: number | null; // profile id
-    first_name?: string | null;
-    last_name?: string | null;
-    email?: string | null;
-  } | null;
-};
-
-/* ───────────────────── Utilities ───────────────────── */
-
-function toHHmm(d: Date) {
-  const h = `${d.getHours()}`.padStart(2, '0');
-  const m = `${d.getMinutes()}`.padStart(2, '0');
-  return `${h}:${m}`;
-}
-
-function formatHMAmPm(iso: string | null | undefined) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  try {
-    return d.toLocaleTimeString([], {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  } catch {
-    let h = d.getHours();
-    const m = `${d.getMinutes()}`.padStart(2, '0');
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${h}:${m} ${ampm}`;
-  }
-}
-
-/* ───────────────────── Screen ───────────────────── */
+/* ───────────────────────── Screen ───────────────────────── */
 
 export default function RouteDraftScreen() {
   const { colors } = useTheme();
@@ -163,10 +168,142 @@ export default function RouteDraftScreen() {
 
   const [headerTitle, setHeaderTitle] = useState('');
 
-  // NEW: Driver reassignment state
+  // Driver reassignment state
   const [driverModalOpen, setDriverModalOpen] = useState(false);
-  const [allDrivers, setAllDrivers] = useState<Employee[]>([]);
-  const [selectedDriver, setSelectedDriver] = useState<Employee | null>(null);
+  const [allDrivers, setAllDrivers] = useState<any[]>([]);
+  const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
+
+  const [fullyOptimized, setFullyOptimized] = useState(false);
+
+  /* ---------- Local helper: apply optimized order ---------- */
+
+  type ApplyOptimizedOrderArgs = {
+    optimized: any;
+    currentStops: Array<{ id: number; sequence?: number }>;
+    fetchStops?: () => Promise<void>;
+  };
+
+  const applyOptimizedOrderLocal = async ({
+    optimized,
+    currentStops,
+    fetchStops,
+  }: ApplyOptimizedOrderArgs): Promise<void> => {
+    // 1) Normalize optimizer payload
+    const data = optimized?.data?.overall ? optimized.data : optimized;
+    const overall = data?.overall ?? {};
+    let orderedIds: number[] = overall.ordered_stop_ids ?? [];
+
+    // Fallback 1: build from stop_sequences
+    if (!orderedIds.length && Array.isArray(overall.stop_sequences)) {
+      orderedIds = overall.stop_sequences
+        .slice()
+        .sort((a: any, b: any) => (a.sequence ?? 0) - (b.sequence ?? 0))
+        .map((s: any) => s.stop_id);
+    }
+
+    // Fallback 2: reconstruct from legs (origin → ... → destination)
+    if (
+      !orderedIds.length &&
+      Array.isArray(data?.segments) &&
+      data.segments.length > 0
+    ) {
+      const seg = data.segments[0];
+      const legs = Array.isArray(seg.legs) ? seg.legs : [];
+      if (legs.length > 0) {
+        const seen = new Set<number>();
+        const pushId = (id: any) => {
+          const n = typeof id === 'number' ? id : Number(id);
+          if (Number.isFinite(n) && !seen.has(n)) {
+            seen.add(n);
+            orderedIds.push(n);
+          }
+        };
+        legs.forEach((lg: any, idx: number) => {
+          if (idx === 0) pushId(lg.from_id);
+          pushId(lg.to_id);
+        });
+        const stopIdSet = new Set(currentStops.map(s => s.id));
+        orderedIds = orderedIds.filter(id => stopIdSet.has(id));
+      }
+    }
+
+    // Fallback 3: keep current order
+    if (!orderedIds.length) {
+      orderedIds = currentStops
+        .slice()
+        .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+        .map(s => s.id);
+    }
+
+    // Include leftovers not seen in optimizer output (defensive)
+    const idSet = new Set(orderedIds);
+    const leftovers = currentStops.filter(s => !idSet.has(s.id)).map(s => s.id);
+    const finalOrderIds = [...orderedIds, ...leftovers];
+
+    // 2) Build expectedDistanceMap from legs: distance for each leg's "to_id"
+    // Works for single or multi segments. If duplicates exist, last write wins.
+    const expectedDistanceMap = new Map<number, number | null>();
+    if (Array.isArray(data?.segments)) {
+      for (const seg of data.segments) {
+        const legs = Array.isArray(seg?.legs) ? seg.legs : [];
+        for (const lg of legs) {
+          const toId = Number(lg?.to_id);
+          if (Number.isFinite(toId)) {
+            const miles1dp = metersToMiles1dp(lg?.distance_meters);
+            expectedDistanceMap.set(toId, miles1dp);
+          }
+        }
+      }
+    }
+
+    // 3) Update local state immediately (snappy UX)
+    setStops(prev => {
+      const byId = new Map(prev.map(s => [s.id, s]));
+      return finalOrderIds.map((id, i) => {
+        const s = byId.get(id)!;
+        // Local echo of expected_distance if you want it reflected in UI right away:
+        const expected_distance = expectedDistanceMap.has(id)
+          ? expectedDistanceMap.get(id)
+          : s.expected_distance ?? null;
+        return { ...s, sequence: i + 1, expected_distance };
+      });
+    });
+
+    // 4) Persist sequentially (one-by-one) with expected_distance
+    const failures: Array<{ stopId: number; sequence: number; error: any }> =
+      [];
+    for (let i = 0; i < finalOrderIds.length; i++) {
+      const stopId = finalOrderIds[i];
+      const sequence = i + 1;
+      const expected_distance = expectedDistanceMap.has(stopId)
+        ? expectedDistanceMap.get(stopId)
+        : null;
+
+      try {
+        // IMPORTANT: updateStopSequence must accept expected_distance on the payload
+        await updateStopSequence(stopId, { sequence, expected_distance });
+      } catch (error) {
+        console.warn('updateStopSequence failed', { stopId, sequence, error });
+        failures.push({ stopId, sequence, error });
+      }
+    }
+
+    if (failures.length) {
+      try {
+        await fetchStops?.();
+      } catch {}
+      Alert.alert(
+        'Order saved with issues',
+        `Updated ${finalOrderIds.length - failures.length} stops, ${
+          failures.length
+        } failed.`,
+      );
+    }
+  };
+
+  // Normal path: we have an order; update local state first
+
+  /* ---------- Effects ---------- */
 
   useEffect(() => {
     const d = new Date(payload.service_date);
@@ -178,48 +315,60 @@ export default function RouteDraftScreen() {
     setHeaderTitle(label);
   }, [payload]);
 
-  // Load route + stops
   useFocusEffect(
     useCallback(() => {
+      initialLoad();
       fetchStops();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
 
   useLayoutEffect(() => {
+    initialLoad();
     fetchStops();
   }, []);
 
-  // NEW: load drivers and preselect current
+  const initialLoad = async () => {
+    const stored = await AsyncStorage.getItem('fullyOptimized');
+    setFullyOptimized(stored === 'true');
+  };
+
   useLayoutEffect(() => {
     if (!business?.id) return;
     (async () => {
       try {
         const res = await getDrivers(business.id);
-        const list: Employee[] = (res?.data ?? []).filter(
-          (e: Employee) => e.is_driver !== false,
+        const list = (res?.data ?? []).filter(
+          (e: any) => e.is_driver !== false,
         );
         setAllDrivers(list);
 
         const currentEmpId = payload.employee_id ?? route?.employee_id ?? null;
-        const cur = list.find(d => d.id === currentEmpId) ?? null;
+        const cur = list.find((d: any) => d.id === currentEmpId) ?? null;
         setSelectedDriver(cur);
       } catch {}
     })();
   }, [business?.id, route?.employee_id, payload.employee_id]);
+
+  /* ---------- Data fetch ---------- */
 
   const fetchStops = async () => {
     setLoading(true);
     try {
       const res = await getRouteById(routeId);
       setRoute(res.data);
-      setStops(res.data.stops.sort((a, b) => a.sequence - b.sequence));
+      setStops(
+        (res.data.stops || [])
+          .slice()
+          .sort((a: Stop, b: Stop) => a.sequence - b.sequence),
+      );
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Failed to load stops');
     } finally {
       setLoading(false);
     }
   };
+
+  /* ---------- Reordering utilities ---------- */
 
   const MOVABLE = new Set<StopStatus>(['planned', 'scheduled']);
   const canMoveStop = (s?: Stop) => !!s && (!s.status || MOVABLE.has(s.status));
@@ -239,12 +388,8 @@ export default function RouteDraftScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await api.delete(`/routes/stops/${s.id}`);
-            setStops(prev =>
-              prev
-                .filter(x => x.id !== s.id)
-                .map((x, i) => ({ ...x, sequence: i + 1 })),
-            );
+            await deleteStop(s.id);
+            fetchStops();
           } catch (e: any) {
             Alert.alert('Error', e?.message ?? 'Delete failed');
           }
@@ -306,20 +451,195 @@ export default function RouteDraftScreen() {
     swapStops(index, index + 1);
   };
 
-  const persistOrder = async () => {
-    setSavingOrder(true);
-    try {
-      const ordered_ids = stops.map(s => s.id);
-      await api.post(`/routes/${routeId}/reorder-stops`, { ordered_ids });
-      Alert.alert('Saved', 'Stop order updated.');
-    } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Failed to save order');
-    } finally {
-      setSavingOrder(false);
+  /* ---------- Confirm (create end base if needed) then optimize ---------- */
+
+  const confirmRoute = async () => {
+    if (!route) {
+      Alert.alert('No route', 'Load a route first.');
+      return;
+    }
+
+    // If end_base is true, create the return-to-base stop first, then optimize.
+    if (route.end_base) {
+      const payloadToCreate = {
+        route_id: route.id,
+        business_id: business.id,
+        stop_type: 'baae', // marker for your backend (was 'baae' earlier)
+        depot_role: 'end', // optional semantic
+        customer_id: null,
+        vendor_id: null,
+        address_line1: business.address_line1 ?? '',
+        address_line2: business.address_line2 ?? null,
+        city: business.city ?? '',
+        region: business.region ?? '',
+        postal_code: business.postal_code ?? null,
+        country_code: business.country_code ?? 'US',
+        latitude: business.latitude ?? null,
+        longitude: business.longitude ?? null,
+        status: 'scheduled',
+        contact_name: business.name ?? 'Base',
+        contact_phone: business.phone ?? '',
+        contact_email: business.email ?? '',
+        business_name: 'Base',
+        sequence: stops.length + 1,
+        is_lunch: false,
+        expected_duration: 60,
+        auto_trigger: false,
+      };
+
+      const res = await createStop(payloadToCreate);
+      if (res.success) {
+        const newStops = [...stops, res.data];
+        setStops(newStops);
+        if (route.optimize) {
+          await optimizeFullRoute(newStops);
+        }
+      } else {
+        Alert.alert('Error', res.error?.message ?? 'Failed to create stop.');
+      }
+    } else {
+      // No end base – optimize immediately using current stops
+      if (route.optimize) {
+        await optimizeFullRoute(stops);
+      } else {
+        // If not optimizing, just publish
+        await onPublish();
+      }
     }
   };
 
-  // Inbox: route dispatched
+  /* ---------- Optimizer ---------- */
+
+  const optimizeFullRoute = async (currentStops: Stop[]) => {
+    try {
+      if (!route) {
+        Alert.alert('No route', 'Load a route first.');
+        return;
+      }
+      if (!Array.isArray(currentStops) || currentStops.length === 0) {
+        Alert.alert('No stops', 'Add at least one stop to optimize.');
+        return;
+      }
+
+      const asNum = (v: any) => (typeof v === 'number' ? v : Number(v));
+
+      // Determine fixed endpoints based on flags and currentStops content:
+      // - start_base true: the first stop is the base (fixed origin)
+      // - end_base true:   the last stop is the base (fixed destination)
+      let origin: {
+        latitude: number;
+        longitude: number;
+        stop_id?: number;
+      } | null = null;
+      let dest: {
+        latitude: number;
+        longitude: number;
+        stop_id?: number;
+      } | null = null;
+
+      if (route.start_base) {
+        const first = currentStops[0];
+        if (
+          !Number.isFinite(asNum(first?.latitude)) ||
+          !Number.isFinite(asNum(first?.longitude))
+        ) {
+          Alert.alert(
+            'Missing coordinates',
+            `First stop (#${first?.id}) has no latitude/longitude.`,
+          );
+          return;
+        }
+        origin = {
+          latitude: asNum(first.latitude)!,
+          longitude: asNum(first.longitude)!,
+          stop_id: first.id,
+        };
+      }
+
+      if (route.end_base) {
+        const last = currentStops[currentStops.length - 1];
+        if (
+          !Number.isFinite(asNum(last?.latitude)) ||
+          !Number.isFinite(asNum(last?.longitude))
+        ) {
+          Alert.alert(
+            'Missing coordinates',
+            `Last stop (#${last?.id}) has no latitude/longitude.`,
+          );
+        }
+        dest = {
+          latitude: asNum(last.latitude)!,
+          longitude: asNum(last.longitude)!,
+          stop_id: last.id,
+        };
+      }
+
+      // Intermediates: exclude the fixed endpoints if they exist
+      let middle = [...currentStops];
+      if (route.start_base && middle.length > 0) {
+        middle = middle.slice(1); // remove first (origin)
+      }
+      if (route.end_base && middle.length > 0) {
+        middle = middle.slice(0, middle.length - 1); // remove last (destination)
+      }
+
+      const stopsPayload = middle.map(s => {
+        const lat = asNum(s.latitude);
+        const lng = asNum(s.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          throw new Error(`Stop #${s.id} is missing latitude/longitude.`);
+        }
+        return {
+          id: s.id,
+          latitude: lat,
+          longitude: lng,
+          service_minutes: Number(s.planned_service_minutes) || 10,
+        };
+      });
+
+      const payloadToOptimize = {
+        route_id: route.id,
+        units: 'IMPERIAL',
+        routingPreference: 'TRAFFIC_AWARE_OPTIMAL',
+        origin,
+        destination: dest,
+        stops: stopsPayload,
+      };
+
+      console.log('optimizeFullRoute payload:', payloadToOptimize);
+      const res = await createOptimizedRoute(payloadToOptimize);
+      console.log(
+        'optimizeFullRoute result:',
+        JSON.stringify(res.data, null, 2),
+      );
+
+      if (!res?.success) {
+        Alert.alert(
+          'Optimization failed',
+          res?.message || 'Server returned an error.',
+        );
+        return;
+      }
+
+      await applyOptimizedOrderLocal({
+        optimized: res.data, // or res if that's how your helper returns it
+        currentStops, // the array you built and sent to optimizer
+      });
+
+      setFullyOptimized(true);
+      await AsyncStorage.setItem('fullyOptimized', 'true');
+      Alert.alert(
+        'Optimized!',
+        'Route order and metrics received. Review before publishing.',
+      );
+    } catch (e: any) {
+      console.error('optimizeFullRoute error', e);
+      Alert.alert('Error', e?.message || 'Failed to optimize route.');
+    }
+  };
+
+  /* ---------- Publish & notifications ---------- */
+
   const notifyRouteDispatched = async ({
     businessId,
     routeId,
@@ -366,9 +686,11 @@ export default function RouteDraftScreen() {
       return;
     }
     setPublishing(true);
+    console.log('publish date', selectedDate);
     try {
       const resp = await publishRouteWithStops(routeId, {
         status: 'dispatched',
+        service_date: selectedDate,
       });
 
       if (resp.success) {
@@ -396,22 +718,22 @@ export default function RouteDraftScreen() {
     }
   };
 
-  // NEW: reassignment
-  const handleReassignDriver = async (emp: Employee) => {
+  /* ---------- Driver reassignment ---------- */
+
+  const handleReassignDriver = async (emp: any) => {
     try {
       const body = {
         employee_id: emp.id,
         driver_id: emp?.Profile?.id ?? null, // profile id
+        service_date: new Date().toISOString().slice(0, 10),
       };
 
       const res = await reassignDriver(routeId, body);
-      if (res.error) {
+      if (res.error)
         throw new Error('Failed to reassign driver: ' + res.error.message);
-      }
 
       setSelectedDriver(emp);
 
-      // optional inbox: route reassigned
       try {
         await CreateInbox({
           businessId: payload.business_id!,
@@ -447,6 +769,8 @@ export default function RouteDraftScreen() {
 
   const plannedStartHM = formatHMAmPm(payload.planned_start_at);
 
+  /* ---------- Render ---------- */
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -459,7 +783,7 @@ export default function RouteDraftScreen() {
         </TouchableOpacity>
         <View style={tw`pl-2`}>
           <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            Route Draft
+            Route
           </Text>
         </View>
       </View>
@@ -493,9 +817,7 @@ export default function RouteDraftScreen() {
                   }}
                   style={[
                     tw`ml-2 rounded-lg p-2`,
-                    {
-                      backgroundColor: colors.main,
-                    },
+                    { backgroundColor: colors.main },
                   ]}
                 >
                   <Edit2 width={14} height={14} color={colors.text} />
@@ -516,7 +838,6 @@ export default function RouteDraftScreen() {
                 </Text>
               </View>
 
-              {/* Driver + Change button */}
               <View style={tw`flex-row items-center justify-between`}>
                 <View style={tw`flex-row items-center`}>
                   <User width={14} height={14} color={colors.text} />
@@ -722,7 +1043,13 @@ export default function RouteDraftScreen() {
         ListFooterComponent={
           <View style={tw`px-4 mt-2 mb-8`}>
             <TouchableOpacity
-              onPress={onPublish}
+              onPress={
+                route?.optimize
+                  ? fullyOptimized
+                    ? onPublish
+                    : confirmRoute
+                  : onPublish
+              }
               disabled={publishing || stops.length === 0}
               style={[
                 tw`px-4 py-3 rounded-2xl items-center`,
@@ -735,7 +1062,13 @@ export default function RouteDraftScreen() {
               ]}
             >
               <Text style={tw`text-white font-semibold`}>
-                {publishing ? 'Publishing…' : 'Publish Route'}
+                {route?.optimize
+                  ? fullyOptimized
+                    ? 'Publish Route'
+                    : 'Optimize Route'
+                  : publishing
+                  ? 'Publishing…'
+                  : 'Publish Route'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -748,7 +1081,7 @@ export default function RouteDraftScreen() {
         onClose={() => setDriverModalOpen(false)}
         drivers={allDrivers}
         selectedId={selectedDriver?.id ?? null}
-        onSelect={(d: Employee) => {
+        onSelect={(d: any) => {
           setDriverModalOpen(false);
           if (d) handleReassignDriver(d);
         }}

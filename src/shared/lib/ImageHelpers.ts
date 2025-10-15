@@ -75,3 +75,56 @@ export const addStopPhoto = async payload => {
   console.log('addStopPhoto res', res.data);
   return res.data;
 };
+
+export const grabDriverTimeEntries = async (
+  driver_id: number,
+  date: string,
+) => {
+  console.log('grabDriverTimeEntries driver_id', driver_id);
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/drivers/get-driver-time-entries/${driver_id}/${date}`);
+  console.log('grabDriverTimeEntries res', res.data);
+  return res.data;
+};
+
+export const grabDriverLastEntryPriorToday = async (
+  id: number,
+  date: string,
+) => {
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/drivers/get-driver-last-entry-prior-today/${id}/${date}`);
+  console.log('grabDriverLastEntryPriorToday res', res.data);
+  return res.data;
+};
+
+export const createTimeEntry = async payload => {
+  console.log('createTimeEntry payload', payload);
+  const res = await api.post<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/drivers/add-time-entry`, payload);
+  console.log('createTimeEntry res', res.data);
+  return res.data;
+};
+
+export const updateTimeEntry = async (id: number, payload: any) => {
+  console.log('updateTimeEntry payload', payload);
+  const res = await api.put<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/drivers/update-time-entry/${id}`, payload);
+  console.log('updateTimeEntry res', res.data);
+  return res.data;
+};

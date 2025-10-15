@@ -1194,3 +1194,68 @@ function metaLine(d: Driver) {
   if (st === 'pending') return 'Pending invite';
   return 'Off Duty';
 }
+
+/* Bottom-sheet action button */
+function SheetButton({
+  label,
+  onPress,
+  colors,
+  LeftIcon,
+  danger,
+  disabled,
+  description,
+}: {
+  label: string;
+  onPress: () => void;
+  colors: any;
+  LeftIcon?: React.ComponentType<{
+    width?: number;
+    height?: number;
+    color?: string;
+  }>;
+  danger?: boolean;
+  disabled?: boolean;
+  description?: string;
+}) {
+  const bg = danger ? 'rgba(239,68,68,0.12)' : colors.border; // red-500 @ 12% if danger
+  const fg = danger ? '#ef4444' : colors.text; // red-500 text if danger
+  const opacity = disabled ? 0.6 : 1;
+
+  return (
+    <TouchableOpacity
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
+      activeOpacity={0.85}
+      style={[
+        tw`w-full px-3 py-3 rounded-2xl mb-2 flex-row items-center`,
+        { backgroundColor: bg, opacity },
+      ]}
+    >
+      {LeftIcon ? (
+        <View style={tw`mr-2`}>
+          <LeftIcon width={18} height={18} color={fg} />
+        </View>
+      ) : null}
+
+      <View style={tw`flex-1`}>
+        <Text
+          style={[tw`text-base font-semibold`, { color: fg }]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        {!!description && (
+          <Text
+            style={[
+              tw`text-2xs mt-0.5`,
+              { color: danger ? '#ef4444' : colors.muted },
+            ]}
+            numberOfLines={2}
+          >
+            {description}
+          </Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}

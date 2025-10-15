@@ -23,6 +23,8 @@ import {
   MapPin,
   Clock,
   X as CloseIcon,
+  GitPullRequest,
+  Check,
 } from 'react-native-feather';
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -35,8 +37,12 @@ import Field from '../../shared/components/inputs/Field';
 import SelectInput from '../../shared/components/inputs/SelectInput';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
 import DriverPickerModal from '../../shared/components/modals/DriverPickerModal';
-import { createDraftRoute } from '../../shared/lib/RouteHelpers';
+import {
+  createDraftRoute,
+  grabRouteCount,
+} from '../../shared/lib/RouteHelpers';
 import { CreateInbox } from '../../shared/lib/inboxHelpers';
+import { createStop } from '../../shared/lib/StopsHelpers';
 
 type RouteParams = Partial<{
   driverId: number | null;
@@ -73,6 +79,13 @@ function toHHmm(d: Date) {
   const h = `${d.getHours()}`.padStart(2, '0');
   const m = `${d.getMinutes()}`.padStart(2, '0');
   return `${h}:${m}`;
+}
+
+export function localYYYYMMDD(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 export default function CreateRouteStep1Screen() {
@@ -120,13 +133,22 @@ export default function CreateRouteStep1Screen() {
   const [singleDay, setSingleDay] = useState(true);
   const [routeOptimize, setRouteOptimize] = useState(true);
 
+  const [driverDisplay, setDriverDisplay] = useState('full');
+  const [autoTriggerStops, setAutoTriggerStops] = useState(false);
+
   const [loading, setLoading] = useState(false);
+
+  const [endBase, setEndBase] = useState(false);
+  const [startBase, setStartBase] = useState(false);
+  const [breaksAmount, setBreaksAmount] = useState('2');
 
   useLayoutEffect(() => {
     if (!business?.id) return;
     (async () => {
       const res = await getDrivers(business.id);
       setAllDrivers(res?.data ?? []);
+      const resCount = await grabRouteCount(business.id);
+      setName(`New Route #${resCount.data + 1}`);
     })();
   }, [business?.id]);
 
@@ -251,8 +273,12 @@ export default function CreateRouteStep1Screen() {
         routeName,
         serviceDateISO,
         plannedStartISO,
+        optimize: routeOptimize,
+        driver_display: driverDisplay,
       },
       single_day: singleDay,
+      optimize: routeOptimize,
+      driver_display: driverDisplay,
     };
 
     // Notify creator/manager
@@ -274,6 +300,13 @@ export default function CreateRouteStep1Screen() {
     }
   };
 
+  function todayLocalYYYYMMDD(d = new Date()): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   const onNext = async () => {
     setLoading(true);
     if (!valid) {
@@ -286,16 +319,23 @@ export default function CreateRouteStep1Screen() {
       driver_id: selectedDriver?.Profile?.id ?? null, // profile id (if your table expects it)
       employee_id: selectedDriver?.id ?? null, // employee id
       name: name!.trim(),
-      service_date: selectedIso, // YYYY-MM-DD
+      service_date: todayLocalYYYYMMDD(), // YYYY-MM-DD
       status: 'draft' as const,
       planned_start_at: combineISODateAndTimeUTC(selectedIso, plannedStart),
       start_longitude: business.longitude || 0,
-      start_latitude: business.latitude || 0,
+      start_latitude: latitude || 0,
       tags: tagsInput
         .split(',')
         .map(t => t.trim())
         .filter(Boolean),
       notes: notes || null,
+      single_day: singleDay,
+      optimize: routeOptimize,
+      driver_display: driverDisplay,
+      auto_trigger_stops: autoTriggerStops,
+      allowed_breaks: parseInt(breaksAmount),
+      end_base: endBase,
+      start_base: startBase,
     };
 
     const draft = await createDraftRoute(payload);
@@ -303,6 +343,36 @@ export default function CreateRouteStep1Screen() {
     console.log('draft', draft);
     setLoading(false);
     if (draft.success) {
+      if (startBase) {
+        const payload = {
+          route_id: draft.data.id,
+          business_id: business.id,
+          stop_type: 'baae', // backend can treat as Base/HQ type
+          depot_role: 'start', // optional: mark as return-to-base
+          customer_id: null,
+          vendor_id: null,
+          address_line1: business.address_line1 ?? '',
+          address_line2: business.address_line2 ?? null,
+          city: business.city ?? '',
+          region: business.region ?? '',
+          postal_code: business.postal_code ?? null,
+          country_code: business.country_code ?? 'US',
+          latitude: business.latitude ?? null,
+          longitude: business.longitude ?? null,
+          status: 'scheduled',
+          contact_name: business.name ?? 'Base',
+          contact_phone: business.phone ?? '',
+          contact_email: business.email ?? '',
+          business_name: 'Base',
+          sequence: 1, // append
+          is_lunch: false,
+          expected_duration: 60,
+          auto_trigger: false,
+        };
+
+        const res = await createStop(payload);
+        console.log('createStop', res);
+      }
       await notifyRouteDraftCreated({
         businessId: business!.id,
         routeId: draft.data.id,
@@ -410,20 +480,6 @@ export default function CreateRouteStep1Screen() {
               </View>
             </View>
 
-            <SectionTitle text="Route Type" />
-            <Row style={tw`items-center mb-2`}>
-              <MapPin width={16} height={16} color="#9CA3AF" />
-              <Text style={[tw`ml-2`, { color: colors.text }]}>
-                Single Shift
-              </Text>
-              <View style={tw`flex-1`} />
-              <Switch
-                value={singleDay}
-                onValueChange={setSingleDay}
-                thumbColor={singleDay ? colors.primary : '#666'}
-              />
-            </Row>
-
             <SectionTitle text="Route Optimization" />
             <Row style={tw`items-center mb-2`}>
               <MapPin width={16} height={16} color="#9CA3AF" />
@@ -437,6 +493,86 @@ export default function CreateRouteStep1Screen() {
                 thumbColor={routeOptimize ? colors.primary : '#666'}
               />
             </Row>
+
+            <SectionTitle text="Route Start/End" />
+            <Row style={tw`items-center mb-2`}>
+              <MapPin width={16} height={16} color="#9CA3AF" />
+              <Text style={[tw`ml-2`, { color: colors.text }]}>
+                Start the drivers route at HQ / Base
+              </Text>
+              <View style={tw`flex-1`} />
+              <Switch
+                value={startBase}
+                onValueChange={setStartBase}
+                thumbColor={startBase ? colors.primary : '#666'}
+              />
+            </Row>
+            <Row style={tw`items-center mb-2`}>
+              <MapPin width={16} height={16} color="#9CA3AF" />
+              <Text style={[tw`ml-2`, { color: colors.text }]}>
+                End the drivers route at HQ / Base
+              </Text>
+              <View style={tw`flex-1`} />
+              <Switch
+                value={endBase}
+                onValueChange={setEndBase}
+                thumbColor={endBase ? colors.primary : '#666'}
+              />
+            </Row>
+
+            <SectionTitle text="Route Display" />
+            <Row style={tw`items-center mb-2`}>
+              <View style={tw`flex-row items-start`}>
+                <GitPullRequest width={16} height={16} color="#9CA3AF" />
+                <View style={tw`ml-2`}>
+                  <Text style={[tw``, { color: colors.text }]}>
+                    Driver Route Display
+                  </Text>
+                  {driverDisplay === 'full' ? (
+                    <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
+                      Disable to show 1 stop at a time for drivers
+                    </Text>
+                  ) : (
+                    <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
+                      Enable to show the full route for drivers
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              <View style={tw`flex-1`} />
+              <Switch
+                value={driverDisplay === 'full'}
+                onValueChange={() =>
+                  setDriverDisplay(driverDisplay === 'full' ? 'single' : 'full')
+                }
+                thumbColor={driverDisplay === 'full' ? colors.primary : '#666'}
+              />
+            </Row>
+
+            <SectionTitle text="Auto Trigger Stops" />
+            <Row style={tw`items-center mb-2`}>
+              <Check width={16} height={16} color="#9CA3AF" />
+              <Text style={[tw`ml-2 flex-1`, { color: colors.text }]}>
+                Automatically trigger next stop
+              </Text>
+              <View style={tw``} />
+              <Switch
+                value={autoTriggerStops}
+                onValueChange={setAutoTriggerStops}
+                thumbColor={autoTriggerStops ? colors.primary : '#666'}
+              />
+            </Row>
+
+            <SectionTitle text="Breaks" />
+            <Field
+              label="Allowed Breaks"
+              value={breaksAmount}
+              onChangeText={setBreaksAmount}
+              placeholder="0"
+              colors={colors}
+              leftIcon={<Clock width={16} height={16} color="#9CA3AF" />}
+            />
 
             {/* Starting location */}
 
