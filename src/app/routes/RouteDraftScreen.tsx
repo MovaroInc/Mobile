@@ -638,8 +638,6 @@ export default function RouteDraftScreen() {
     }
   };
 
-  /* ---------- Publish & notifications ---------- */
-
   const notifyRouteDispatched = async ({
     businessId,
     routeId,

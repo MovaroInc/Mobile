@@ -35,13 +35,14 @@ import {
   X,
   Trash2,
 } from 'react-native-feather';
-import Geolocation from 'react-native-geolocation-service';
+import Geolocation from '@react-native-community/geolocation';
 import { useTheme } from '../../shared/hooks/useTheme';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   updateStopStatus,
   createStopsPhotos,
   getStopById,
+  updateStopPayment,
 } from '../../shared/lib/StopsHelpers';
 import {
   takePhotoWithCamera,
@@ -588,9 +589,27 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
         departed_at: departedAtIso,
         service_minutes_actual: serviceMinutesActual, // bigint >= 0 or null
         proof: proofPayload,
+        checklist_complete: true,
       };
 
       const updated = await updateStopStatus(stop.id, payload);
+
+      const payloadPayment = {
+        stop_id: stop.payments?.id,
+        amount_captured: Number(paymentForm.amount) || 0,
+        amount_difference:
+          Number(stop.payments?.amount_due) - Number(paymentForm.amount) || 0,
+        actual_method: paymentForm.method,
+        actual_direction: paymentForm.direction,
+      };
+
+      console.log('payloadPayment', payloadPayment);
+
+      const updatedPayment = await updateStopPayment(
+        stop.payments?.id ?? 0,
+        payloadPayment,
+      );
+      console.log('updatedPayment', updatedPayment);
 
       setStop(updated.data);
       setConfirmVisible(false);
@@ -1555,201 +1574,213 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
         visible={confirmVisible}
         onRequestClose={() => setConfirmVisible(false)}
       >
-        <View style={tw`flex-1 bg-black/40`}>
-          <View
-            style={[
-              tw`mt-auto rounded-t-3xl p-4 pb-6`,
-              { backgroundColor: colors.main },
-            ]}
-          >
-            {/* Header */}
-            <View style={tw`flex-row items-center mb-3`}>
-              <Text style={[tw`text-xl font-semibold`, { color: colors.text }]}>
-                Confirm Stop Completion
-              </Text>
-              <View style={tw`flex-1`} />
-              <TouchableOpacity onPress={() => setConfirmVisible(false)}>
-                <X width={22} height={22} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Summary card */}
+        console.log('confirmVisible', confirmVisible); return (
+        <>
+          <View style={tw`flex-1 bg-black/40`}>
             <View
               style={[
-                tw`rounded-2xl p-3 mb-3`,
-                { backgroundColor: colors.border },
+                tw`mt-auto rounded-t-3xl p-4 pb-6`,
+                { backgroundColor: colors.main },
               ]}
             >
-              <Text
-                style={[tw`text-sm font-semibold mb-2`, { color: colors.text }]}
-              >
-                Summary
-              </Text>
+              {/* Header */}
+              <View style={tw`flex-row items-center mb-3`}>
+                <Text
+                  style={[tw`text-xl font-semibold`, { color: colors.text }]}
+                >
+                  Confirm Stop Completion
+                </Text>
+                <View style={tw`flex-1`} />
+                <TouchableOpacity onPress={() => setConfirmVisible(false)}>
+                  <X width={22} height={22} color={colors.text} />
+                </TouchableOpacity>
+              </View>
 
-              <Row label="Address" value={addressLine} />
-              <Row label="Window" value={timeWindow} />
-              <Row
-                label="Invoice photos"
-                value={String(invoiceImages.length)}
-              />
-              <Row label="Other photos" value={String(otherImages.length)} />
-
-              <Row
-                label="Payment"
-                value={
-                  paymentRequired
-                    ? `${paymentForm.method || '—'} • ${
-                        paymentForm.status || '—'
-                      }${
-                        paymentForm.status !== 'waived' && paymentForm.amount
-                          ? ` • ${paymentForm.currency} ${paymentForm.amount}`
-                          : ''
-                      }`
-                    : 'Not required'
-                }
-              />
-
-              {/* Quick requirement ticks */}
-              <Row
-                label="Signature"
-                value={
-                  stop.requirements?.signature
-                    ? actions.signatureImage
-                      ? 'Captured'
-                      : 'Missing'
-                    : 'N/A'
-                }
-              />
-              <Row
-                label="Printed name"
-                value={
-                  stop.requirements?.print_name
-                    ? actions.printedName?.trim()
-                      ? 'OK'
-                      : 'Missing'
-                    : 'N/A'
-                }
-              />
-              <Row
-                label="Invoice given"
-                value={
-                  stop.requirements?.give_invoice
-                    ? actions.gaveInvoiceConfirmed
-                      ? 'OK'
-                      : 'Missing'
-                    : 'N/A'
-                }
-              />
-              <Row
-                label="ID checked"
-                value={
-                  stop.requirements?.id_required
-                    ? actions.idCheckedConfirmed
-                      ? 'OK'
-                      : 'Missing'
-                    : 'N/A'
-                }
-              />
-              <Row
-                label="Contact before"
-                value={
-                  stop.requirements?.contact_before
-                    ? actions.calledContactConfirmed
-                      ? 'OK'
-                      : 'Missing'
-                    : 'N/A'
-                }
-              />
-              <Row
-                label="Contactless"
-                value={
-                  stop.requirements?.contactless
-                    ? actions.contactlessDropConfirmed
-                      ? 'OK'
-                      : 'Missing'
-                    : 'N/A'
-                }
-              />
-              <Row
-                label="Dock appt"
-                value={
-                  stop.requirements?.dock_appointment
-                    ? actions.dockApptConfirmed
-                      ? 'OK'
-                      : 'Missing'
-                    : 'N/A'
-                }
-              />
-              <Row
-                label="Temperature"
-                value={
-                  stop.requirements?.temp_control
-                    ? actions.tempReadingF != null
-                      ? `${actions.tempReadingF}°F`
-                      : 'Missing'
-                    : 'N/A'
-                }
-              />
-            </View>
-
-            {/* Errors, if any */}
-            {errors.length > 0 && (
+              {/* Summary card */}
               <View
                 style={[
                   tw`rounded-2xl p-3 mb-3`,
-                  { backgroundColor: '#2b2f3a' },
-                ]}
-              >
-                <Text
-                  style={[tw`text-xs font-semibold mb-1`, { color: '#fecaca' }]}
-                >
-                  Fix these before completing:
-                </Text>
-                {errors.map(e => (
-                  <Text key={e} style={tw`text-red-300 text-2xs`}>
-                    • {e}
-                  </Text>
-                ))}
-              </View>
-            )}
-
-            {/* Actions */}
-            <View style={tw`flex-row`}>
-              <TouchableOpacity
-                onPress={() => setConfirmVisible(false)}
-                disabled={confirmLoading}
-                style={[
-                  tw`flex-1 mr-2 px-3 py-3 rounded-xl items-center`,
                   { backgroundColor: colors.border },
                 ]}
               >
-                <Text style={{ color: colors.text }}>Back</Text>
-              </TouchableOpacity>
+                <Text
+                  style={[
+                    tw`text-sm font-semibold mb-2`,
+                    { color: colors.text },
+                  ]}
+                >
+                  Summary
+                </Text>
 
-              <TouchableOpacity
-                onPress={handleConfirmAndComplete}
-                disabled={!isValid || confirmLoading}
-                style={[
-                  tw`flex-1 px-3 py-3 rounded-xl items-center`,
-                  {
-                    backgroundColor:
-                      !isValid || confirmLoading
-                        ? '#4b5563'
-                        : colors.brand?.primary || '#2563eb',
-                  },
-                ]}
-              >
-                {confirmLoading ? (
-                  <ActivityIndicator />
-                ) : (
-                  <Text style={tw`text-white font-semibold`}>
-                    Confirm & Complete
+                <Row label="Address" value={addressLine} />
+                <Row label="Window" value={timeWindow} />
+                <Row
+                  label="Invoice photos"
+                  value={String(invoiceImages.length)}
+                />
+                <Row label="Other photos" value={String(otherImages.length)} />
+
+                <Row
+                  label="Payment"
+                  value={
+                    paymentRequired
+                      ? `${paymentForm.method || '—'} • ${
+                          paymentForm.status || '—'
+                        }${
+                          paymentForm.status !== 'waived' && paymentForm.amount
+                            ? ` • ${paymentForm.currency} ${paymentForm.amount}`
+                            : ''
+                        }`
+                      : 'Not required'
+                  }
+                />
+
+                {/* Quick requirement ticks */}
+                <Row
+                  label="Signature"
+                  value={
+                    stop.requirements?.signature
+                      ? actions.signatureImage
+                        ? 'Captured'
+                        : 'Missing'
+                      : 'N/A'
+                  }
+                />
+                <Row
+                  label="Printed name"
+                  value={
+                    stop.requirements?.print_name
+                      ? actions.printedName?.trim()
+                        ? 'OK'
+                        : 'Missing'
+                      : 'N/A'
+                  }
+                />
+                <Row
+                  label="Invoice given"
+                  value={
+                    stop.requirements?.give_invoice
+                      ? actions.gaveInvoiceConfirmed
+                        ? 'OK'
+                        : 'Missing'
+                      : 'N/A'
+                  }
+                />
+                <Row
+                  label="ID checked"
+                  value={
+                    stop.requirements?.id_required
+                      ? actions.idCheckedConfirmed
+                        ? 'OK'
+                        : 'Missing'
+                      : 'N/A'
+                  }
+                />
+                <Row
+                  label="Contact before"
+                  value={
+                    stop.requirements?.contact_before
+                      ? actions.calledContactConfirmed
+                        ? 'OK'
+                        : 'Missing'
+                      : 'N/A'
+                  }
+                />
+                <Row
+                  label="Contactless"
+                  value={
+                    stop.requirements?.contactless
+                      ? actions.contactlessDropConfirmed
+                        ? 'OK'
+                        : 'Missing'
+                      : 'N/A'
+                  }
+                />
+                <Row
+                  label="Dock appt"
+                  value={
+                    stop.requirements?.dock_appointment
+                      ? actions.dockApptConfirmed
+                        ? 'OK'
+                        : 'Missing'
+                      : 'N/A'
+                  }
+                />
+                <Row
+                  label="Temperature"
+                  value={
+                    stop.requirements?.temp_control
+                      ? actions.tempReadingF != null
+                        ? `${actions.tempReadingF}°F`
+                        : 'Missing'
+                      : 'N/A'
+                  }
+                />
+              </View>
+
+              {/* Errors, if any */}
+              {errors.length > 0 && (
+                <View
+                  style={[
+                    tw`rounded-2xl p-3 mb-3`,
+                    { backgroundColor: '#2b2f3a' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      tw`text-xs font-semibold mb-1`,
+                      { color: '#fecaca' },
+                    ]}
+                  >
+                    Fix these before completing:
                   </Text>
-                )}
-              </TouchableOpacity>
+                  {errors.map(e => (
+                    <Text key={e} style={tw`text-red-300 text-2xs`}>
+                      • {e}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              {/* Actions */}
+              <View style={tw`flex-row`}>
+                <TouchableOpacity
+                  onPress={() => setConfirmVisible(false)}
+                  disabled={confirmLoading}
+                  style={[
+                    tw`flex-1 mr-2 px-3 py-3 rounded-xl items-center`,
+                    { backgroundColor: colors.border },
+                  ]}
+                >
+                  <Text style={{ color: colors.text }}>Back</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleConfirmAndComplete}
+                  disabled={!isValid || confirmLoading}
+                  style={[
+                    tw`flex-1 px-3 py-3 rounded-xl items-center`,
+                    {
+                      backgroundColor:
+                        !isValid || confirmLoading
+                          ? '#4b5563'
+                          : colors.brand?.primary || '#2563eb',
+                    },
+                  ]}
+                >
+                  {confirmLoading ? (
+                    <ActivityIndicator />
+                  ) : (
+                    <Text style={tw`text-white font-semibold`}>
+                      Confirm & Complete
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </>
+        )
       </Modal>
     </View>
   );

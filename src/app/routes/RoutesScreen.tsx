@@ -148,7 +148,9 @@ export default function RouteScreen() {
     new Date().toISOString().slice(0, 10),
   );
 
-  const selectedDate = convertToYYYYMMDD(new Date().toLocaleDateString());
+  const [selectedDate, setSelectedDate] = useState(
+    convertToYYYYMMDD(new Date().toLocaleDateString()),
+  );
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -193,7 +195,7 @@ export default function RouteScreen() {
           setLoading(false);
         }
       })();
-    }, [business?.id, selectedIso]),
+    }, [business?.id, selectedDate]),
   );
 
   const onRefresh = async () => {
@@ -291,6 +293,18 @@ export default function RouteScreen() {
     };
   }, [routes, drivers, items, selectedIso, initialIso]);
 
+  const toYYYY_DD_MM = (input: string | Date) => {
+    if (input instanceof Date) {
+      const yyyy = input.getFullYear();
+      const dd = String(input.getDate()).padStart(2, '0');
+      const mm = String(input.getMonth() + 1).padStart(2, '0');
+      return `${yyyy}-${dd}-${mm}`;
+    }
+    // assume 'YYYY-MM-DD'
+    const [yyyy, mm, dd] = String(input).split('-');
+    return `${yyyy}-${dd}-${mm}`;
+  };
+
   return (
     <View style={[tw`flex-1`, { backgroundColor: colors.bg ?? colors.main }]}>
       {/* FAB */}
@@ -316,7 +330,7 @@ export default function RouteScreen() {
         <View style={tw`flex-row items-center`}>
           {loading ? <ActivityIndicator /> : null}
           <TouchableOpacity
-            onPress={() => navigation.navigate('RouteAnalytics')}
+            onPress={() => navigation.navigate('Analytics')}
             style={[
               tw`p-2 rounded-2 ml-3`,
               {
@@ -354,7 +368,11 @@ export default function RouteScreen() {
               return (
                 <TouchableOpacity
                   key={i.iso}
-                  onPress={() => setSelectedIso(i.iso)}
+                  onPress={() => {
+                    // i.iso presumed 'YYYY-MM-DD'
+                    setSelectedDate(toYYYY_DD_MM(i.iso)); // => 'YYYY-DD-MM'
+                    setSelectedIso?.(i.iso); // if you track active tab by iso
+                  }}
                   style={[
                     tw`px-3 py-2 mx-1 rounded-lg items-center`,
                     {

@@ -3,9 +3,11 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import DriversScreen from '../../../app/drivers/DriversScreen';
 import DriverInviteScreen from '../../../app/drivers/DriverInviteScreen';
+import DriverOverviewScreen from '../../../app/drivers/DriverOverviewScreen';
 type AuthParamList = {
   Drivers: undefined;
   DriverInvite: undefined;
+  DriverOverview: { profileId: number };
 };
 const Stack = createStackNavigator<AuthParamList>();
 
@@ -14,6 +16,7 @@ export default function DriversStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Drivers" component={DriversScreen} />
       <Stack.Screen name="DriverInvite" component={DriverInviteScreen} />
+      <Stack.Screen name="DriverOverview" component={DriverOverviewScreen} />
     </Stack.Navigator>
   );
 }

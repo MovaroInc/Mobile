@@ -104,3 +104,14 @@ export const updateStopSequence = async (stopId: number, payload: any) => {
   console.log('res', res);
   return res.data;
 };
+
+export const updateStopPayment = async (stopId: number, payload: any) => {
+  const res = await api.put<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/stop-payments/update-stop-payment/${stopId}`, payload);
+  console.log('res', res);
+  return res.data;
+};

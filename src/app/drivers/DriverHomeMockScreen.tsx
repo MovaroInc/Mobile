@@ -1,12 +1,5 @@
 // src/app/driver/DriverTodayScreen.tsx
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -23,13 +16,11 @@ import {
   Phone,
   Clock,
   MapPin,
-  CheckCircle,
   Play,
-  PauseCircle,
-  Info as InfoIcon,
   X,
   RefreshCcw,
   Map as MapIcon,
+  Info as InfoIcon,
 } from 'react-native-feather';
 import { useTheme } from '../../shared/hooks/useTheme';
 import {
@@ -48,6 +39,20 @@ import {
 } from '../../shared/lib/RouteHelpers';
 import { updateStopStatus } from '../../shared/lib/StopsHelpers';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+
+// permissions helpers & local persistence
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  getLocationLevel,
+  requestForegroundOnce,
+  tryUpgradeToAlways,
+  openAppSettings,
+  onReturnFromSettings,
+  isAlwaysLike,
+} from '../../shared/lib/locations';
+
+// 🔴 IMPORTANT: no ".ts" extension here
+import { startLiveFeed, stopLiveFeed } from '../../shared/lib/liveFeed';
 
 /* ───────────────── types ───────────────── */
 
@@ -96,6 +101,7 @@ type RouteRecord = {
   vehicle?: string | null;
   driver_display?: 'full' | 'single' | null;
   auto_trigger_stops?: boolean | null;
+  allowed_breaks?: number | null;
   stops?: Stop[] | null;
 };
 
@@ -117,9 +123,7 @@ const convertToYYYYMMDD = (date: string) => {
   const [day, month, year] = date.split('/');
   return `${year}-${month}-${day}`;
 };
-
 const todayLocalYYYYMMDD = convertToYYYYMMDD(new Date().toLocaleDateString());
-console.log('todays date', todayLocalYYYYMMDD);
 
 function greeting() {
   const h = new Date().getHours();
@@ -149,12 +153,6 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   completed: { label: 'Done', color: '#10B981' },
 };
 
-function statusColor(status?: string | null) {
-  return (status && STATUS_META[status]?.color) || '#6B7280';
-}
-
-/* ───────────────── utilities (FIXED alert-to-promise) ───────────────── */
-
 function confirmAsync({
   title,
   message,
@@ -181,17 +179,11 @@ function confirmAsync({
   });
 }
 
-function firstEntry(data: any): any | null {
-  if (!data) return null;
-  if (Array.isArray(data) && data.length > 0) return data[0];
-  return null;
-}
-
 /* ───────────────── screen ───────────────── */
 
 export default function DriverTodayScreen() {
   const { colors } = useTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { profile, business } = useSession();
 
   const [breakOn, setBreakOn] = useState(false);
@@ -203,20 +195,14 @@ export default function DriverTodayScreen() {
 
   const [route, setRoute] = useState<RouteRecord | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
-
   const [currentStop, setCurrentStop] = useState<Stop | null>(null);
   const [nextStop, setNextStop] = useState<Stop | null>(null);
   const [remainingCount, setRemainingCount] = useState<number>(0);
 
   const [needsCloseFromYesterday, setNeedsCloseFromYesterday] = useState(false);
   const [allDoneToday, setAllDoneToday] = useState(false);
-
-  // prevent "No route" flash: only show empty when a fetch was actually attempted
   const [routeAttempted, setRouteAttempted] = useState(false);
-
   const [closedTimeSheet, setClosedTimeSheet] = useState(false);
-
-  // NEW: break tracking (limit to 1)
   const [allowedBreaks, setAllowedBreaks] = useState(false);
   const [breaks, setBreaks] = useState<
     {
@@ -230,7 +216,7 @@ export default function DriverTodayScreen() {
   >([]);
   const [currentBreak, setCurrentBreak] = useState<any | null>(null);
 
-  // Auto-start banner state
+  // Auto-start banner
   const [autoStart, setAutoStart] = useState<{
     stop: Stop;
     seconds: number;
@@ -244,75 +230,106 @@ export default function DriverTodayScreen() {
   };
   useEffect(() => () => clearAutoTimer(), []);
 
-  /* ─────────────── initial load (wait for profile.id) ─────────────── */
+  // Location permission modal state
+  const [showLocModal, setShowLocModal] = useState(false);
+  const [modalMode, setModalMode] = useState<'need_permission' | 'need_always'>(
+    'need_permission',
+  );
+  const MODAL_KEY = 'mv_location_modal_dismissed_v1';
+
+  // Re-check when returning from Settings
+  useEffect(
+    () =>
+      onReturnFromSettings(() => {
+        void recheckLocationGate();
+      }),
+    [],
+  );
+
+  // Check on screen focus
   useFocusEffect(
     useCallback(() => {
       const loadData = async () => {
+        await recheckLocationGate(); // check permission first
         const timesheetData = await checkTimesheet();
-
-        // If timesheet exists and is open, fetch route
         if (timesheetData && timesheetData.length > 0) {
           await run();
         }
       };
-
-      loadData();
-    }, [profile?.id, business?.id]), // Add dependencies
+      void loadData();
+    }, [profile?.id, business?.id]),
   );
 
-  useEffect(() => {
-    console.log('needsCloseFromYesterday', needsCloseFromYesterday);
-  }, [needsCloseFromYesterday]);
+  /** Centralized gate check. Shows tutorial modal when needed. */
+  const recheckLocationGate = useCallback(async () => {
+    const dismissed = (await AsyncStorage.getItem(MODAL_KEY)) === '1';
 
-  /* ─────────────── helpers ─────────────── */
+    // 1) read current level
+    let lvl = await getLocationLevel();
+
+    // 2) if not authorized at all, try one foreground ask
+    if (!lvl.authorized) {
+      lvl = await requestForegroundOnce();
+    }
+
+    // 3) decide which modal to show
+    if (!lvl.authorized) {
+      if (!dismissed) {
+        setModalMode('need_permission');
+        setShowLocModal(true);
+      }
+      return;
+    }
+
+    // authorized but not “Always-like”
+    if (!isAlwaysLike(lvl)) {
+      if (!dismissed) {
+        setModalMode('need_always');
+        setShowLocModal(true);
+      }
+    } else {
+      setShowLocModal(false);
+    }
+  }, []);
+
+  /* ─────────────── data helpers ─────────────── */
 
   const checkTimesheet = async () => {
-    if (!profile?.id || !business?.id) return; // wait for session hydration
+    if (!profile?.id || !business?.id) return;
 
     setLoading(true);
     try {
-      // 1) Check YESTERDAY for open entry
       const resY = await grabDriverLastEntryPriorToday(
         profile.id,
         todayLocalYYYYMMDD,
       );
-      console.log('resY', resY);
       const yEntry = resY.data;
-      if (yEntry) {
-        setYesterdayTimeEntry(yEntry);
-      }
-
+      if (yEntry) setYesterdayTimeEntry(yEntry);
       setNeedsCloseFromYesterday(!!yEntry && !yEntry.clock_out);
 
-      // 2) Check TODAY timesheet
-      console.log('today', todayLocalYYYYMMDD);
       const resToday = await grabDriverTimeEntries(
         profile.id,
         todayLocalYYYYMMDD,
       );
-      console.log('resToday', resToday.data);
-
-      if (resToday.data[0].clock_in && resToday.data[0].clock_out) {
-        console.log('closedTimeSheet', resToday.data);
+      if (resToday?.data?.[0]?.clock_in && resToday?.data?.[0]?.clock_out) {
         setClosedTimeSheet(true);
       }
 
       const isClockedIn =
         !!resToday?.success && (resToday.data?.length ?? 0) > 0;
-
-      // NOTE: do NOT read `clockedIn` here; it's stale this tick.
-      // Route will be fetched by the effect below when `clockedIn` flips true.
       if (!isClockedIn) {
+        setTimeEntry([]);
+        setClockedIn(false);
         setRoute(null);
         setStops([]);
         setRouteAttempted(false);
         return null;
       } else {
-        setTimeEntry(resToday?.data ?? []);
-        setClockedIn(isClockedIn);
+        setTimeEntry(resToday.data || []);
+        setClockedIn(true);
         return resToday.data;
       }
-    } catch (e) {
+    } catch {
       setTimeEntry([]);
       setClockedIn(false);
       setRoute(null);
@@ -324,13 +341,11 @@ export default function DriverTodayScreen() {
   };
 
   const run = async () => {
-    console.log('called run');
     try {
       const res = await grabRouteProfileAndDate(profile.id, todayLocalYYYYMMDD);
       const r: RouteRecord | null = res?.success ? res.data ?? null : null;
-      console.log('todays route response', res);
       setRoute(r);
-      setAllowedBreaks(r?.allowed_breaks ?? false);
+      setAllowedBreaks(!!r?.allowed_breaks);
       const sorted = sortStopsBySequence(r?.stops ?? []);
       setStops(sorted);
       setRouteAttempted(true);
@@ -344,18 +359,14 @@ export default function DriverTodayScreen() {
 
   useEffect(() => {
     if (!route?.id) return;
-    grabAllRouteBreaks();
+    void grabAllRouteBreaks();
   }, [route?.id]);
 
   const grabAllRouteBreaks = async () => {
     const res = await grabRouteBreaks(route?.id ?? 0);
-    console.log('grabAllRouteBreaks res', res);
-
     const list = Array.isArray(res?.data) ? res.data : [];
     setBreaks(list);
 
-    // consider common field names for start/end
-    console.log('list', list);
     const hasOpenBreak = list.some((b: any) => {
       const start =
         b?.start ?? b?.started ?? b?.start_time ?? b?.begin ?? b?.clock_in;
@@ -363,8 +374,6 @@ export default function DriverTodayScreen() {
         b?.end ?? b?.ended ?? b?.end_time ?? b?.finish ?? b?.clock_out;
       return !!start && !end;
     });
-
-    console.log('hasOpenBreak', hasOpenBreak);
     setBreakOn(hasOpenBreak);
     setCurrentBreak(
       list.find((b: any) => {
@@ -373,36 +382,14 @@ export default function DriverTodayScreen() {
         const end =
           b?.end ?? b?.ended ?? b?.end_time ?? b?.finish ?? b?.clock_out;
         return !!start && !end;
-      }),
+      }) || null,
     );
-  };
-
-  const addNewRouteBreak = async () => {
-    if (!route?.id || !profile?.id || !business?.id) return;
-    if (breaks.length < (route.allowed_breaks ?? 0)) {
-      const res = await newRouteBreak({
-        route_id: route?.id ?? 0,
-        profile_id: profile?.id ?? 0,
-        business_id: business?.id ?? 0,
-        started: new Date().toISOString(),
-      });
-      console.log('addNewRouteBreak res', res);
-      grabAllRouteBreaks();
-    } else {
-      Alert.alert(
-        'Limit Reached',
-        'You have reached the maximum number of breaks for this route.',
-      );
-    }
   };
 
   const stopBreak = async () => {
     if (!route?.id || !profile?.id || !business?.id) return;
-
     if (breakOn) {
       const nowIso = new Date().toISOString();
-
-      // Compute minutes between currentBreak.started and now
       let minutes_lapsed: number | undefined;
       if (currentBreak?.started) {
         const startMs = new Date(currentBreak.started).getTime();
@@ -411,13 +398,11 @@ export default function DriverTodayScreen() {
           minutes_lapsed = Math.max(0, Math.round((endMs - startMs) / 60000));
         }
       }
-
       await updateRouteBreak(currentBreak?.id ?? 0, {
         ended: nowIso,
         ...(typeof minutes_lapsed === 'number' ? { minutes_lapsed } : {}),
       });
-
-      grabAllRouteBreaks();
+      void grabAllRouteBreaks();
     }
   };
 
@@ -436,18 +421,16 @@ export default function DriverTodayScreen() {
   };
 
   const closeEntryFromYesterday = async () => {
-    const res = await updateTimeEntry(yesterdayTimeEntry.id, {
+    const res = await updateTimeEntry((yesterdayTimeEntry as any)?.id, {
       clock_out: new Date().toISOString(),
       status: 'closed',
     });
-    console.log('closeEntryFromYesterday res', res);
     setYesterdayTimeEntry(res.data);
     if (res.success) {
       setNeedsCloseFromYesterday(res.data.clock_out === null);
     }
   };
 
-  // Utility: minutes between two ISO timestamps (rounded to nearest whole minute)
   const minutesBetween = (startIso?: string | null, endIso?: string | null) => {
     if (!startIso || !endIso) return 0;
     const a = new Date(startIso).getTime();
@@ -456,7 +439,6 @@ export default function DriverTodayScreen() {
     return Math.max(0, Math.round((b - a) / 60000));
   };
 
-  // Sum all break minutes from local state (handles open & closed breaks)
   const sumBreakMinutes = (
     allBreaks: Array<{
       started?: string;
@@ -466,9 +448,7 @@ export default function DriverTodayScreen() {
     nowIso: string,
   ) => {
     if (!Array.isArray(allBreaks) || allBreaks.length === 0) return 0;
-
     return allBreaks.reduce((sum, br) => {
-      // Prefer an explicit minutes_lapsed if present and finite
       if (
         typeof br.minutes_lapsed === 'number' &&
         isFinite(br.minutes_lapsed) &&
@@ -476,13 +456,11 @@ export default function DriverTodayScreen() {
       ) {
         return sum + Math.round(br.minutes_lapsed);
       }
-      // Otherwise compute from started → (ended || now)
       const end = br.ended || nowIso;
       return sum + minutesBetween(br.started, end);
     }, 0);
   };
 
-  // Build the single payload for the server
   const buildClockOutPayload = ({
     clockInIso,
     breaksList,
@@ -495,25 +473,56 @@ export default function DriverTodayScreen() {
     }>;
   }) => {
     const nowIso = new Date().toISOString();
-
     const duration_minutes = minutesBetween(clockInIso, nowIso);
     const break_minutes_total = sumBreakMinutes(breaksList, nowIso);
-
     return {
       clock_out: nowIso,
       status: 'closed',
       duration_minutes,
       break_minutes_total,
-      // lunch minutes: to be handled by you later (per your note)
     };
   };
+
+  /* ─────────────── live feed lifecycle (NEW) ─────────────── */
+
+  const liveCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (!profile?.id || !business?.id) return;
+
+    if (clockedIn) {
+      // ensure previous timers/listeners are cleared first
+      stopLiveFeed();
+      liveCleanupRef.current?.();
+
+      const cleanup = startLiveFeed({
+        profileId: profile.id,
+        driverId: (profile as any).employee_id ?? profile.id,
+        businessId: business.id,
+        routeId: route?.id ?? null,
+        service_date: todayLocalYYYYMMDD,
+      });
+
+      liveCleanupRef.current = cleanup;
+    } else {
+      // not clocked in: stop everything
+      stopLiveFeed();
+      liveCleanupRef.current?.();
+      liveCleanupRef.current = null;
+    }
+
+    // on unmount: hard stop
+    return () => {
+      stopLiveFeed();
+      liveCleanupRef.current?.();
+      liveCleanupRef.current = null;
+    };
+  }, [clockedIn, profile?.id, business?.id, route?.id]);
 
   /* ─────────────── actions ─────────────── */
 
   const handleClockOut = async () => {
     try {
-      // Guard: need an open time entry
-      console.log('timeEntry', timeEntry);
       const current = timeEntry[0];
       if (!current?.id || !current?.clock_in) {
         Alert.alert(
@@ -522,20 +531,20 @@ export default function DriverTodayScreen() {
         );
         return;
       }
-
-      // Build the one-and-only payload from local state
       const payload = buildClockOutPayload({
         clockInIso: current.clock_in,
-        breaksList: breaks || [], // make sure `breaks` is your local state array
+        breaksList: breaks || [],
       });
-
-      // Single server call
       const res = await updateTimeEntry(current.id, payload);
-
       if (!res?.success) {
         Alert.alert('Clock out failed', res?.message || 'Please try again.');
         return;
       }
+
+      // stop live feed immediately
+      stopLiveFeed();
+      liveCleanupRef.current?.();
+      liveCleanupRef.current = null;
 
       checkTimesheet();
       Alert.alert('Clocked out', 'Your time has been recorded.');
@@ -548,7 +557,21 @@ export default function DriverTodayScreen() {
     try {
       setLoading(true);
 
-      // Re-check yesterday before allowing a new entry
+      // enforce location policy before clock in
+      const okToClockIn = await (async () => {
+        const lvl = await tryUpgradeToAlways();
+        if (isAlwaysLike(lvl)) return true;
+        setModalMode(lvl.authorized ? 'need_always' : 'need_permission');
+        setShowLocModal(true);
+        return false;
+      })();
+
+      if (!okToClockIn) {
+        setLoading(false);
+        return;
+      }
+
+      // close yesterday if needed
       const resY = await grabDriverLastEntryPriorToday(
         profile?.id ?? 0,
         todayLocalYYYYMMDD,
@@ -566,15 +589,14 @@ export default function DriverTodayScreen() {
           confirmText: 'Clock Out',
           cancelText: 'Cancel',
         });
-
         if (!proceed) {
           setLoading(false);
           return;
         }
-
         await closeEntryNow(yEntry.id);
       }
 
+      // create today entry
       const res = await createTimeEntry({
         business_id: business.id,
         profile_id: profile.id,
@@ -589,8 +611,8 @@ export default function DriverTodayScreen() {
 
       if (res?.success) {
         setTimeEntry(res.data || []);
-        setClockedIn(true); // route fetch will be triggered by the effect
-        run();
+        setClockedIn(true); // <- live feed starts via effect
+        void run(); // fetch route/stops
       } else {
         Alert.alert('Clock in failed', res?.message || 'Try again.');
       }
@@ -600,8 +622,6 @@ export default function DriverTodayScreen() {
       setLoading(false);
     }
   };
-
-  const toggleBreak = () => setBreakOn(v => !v);
 
   const navigateTo = async (s: Stop) => {
     const lat = (s as any).latitude ?? (s as any).lat;
@@ -648,8 +668,6 @@ export default function DriverTodayScreen() {
     Linking.openURL(`tel:${p}`);
   };
 
-  /* ─────────────── auto-start logic ─────────────── */
-
   const cancelAutoStart = () => {
     clearAutoTimer();
     setAutoStart(null);
@@ -658,9 +676,7 @@ export default function DriverTodayScreen() {
   const doAutoStartStop = async (stop: Stop, r: RouteRecord) => {
     try {
       await updateStopStatus(stop.id, { status: 'en_route' });
-      await updateRouter(r.id, {
-        status: 'in_progress',
-      });
+      await updateRouter(r.id, { status: 'in_progress' });
       markEnrouteLocal(stop.id);
       navigation.navigate(
         'Stop' as never,
@@ -690,63 +706,7 @@ export default function DriverTodayScreen() {
   };
 
   const goToRoute = async (r: Stop) => {
-    console.log('goToRoute', r);
-    navigation.navigate(
-      'Stop' as never,
-      {
-        stop: r,
-      } as never,
-    );
-  };
-
-  const refreshToday = async () => {
-    if (!profile?.id || !business?.id) return;
-
-    try {
-      // setRefreshing(true);
-      clearAutoTimer(); // don’t double-run the countdown
-      setAutoStart(null);
-
-      const resToday = await grabDriverTimeEntries(
-        profile.id,
-        todayLocalYYYYMMDD,
-      );
-      const todayEntries = resToday?.data ?? [];
-      setTimeEntry(todayEntries);
-      const isIn = !!resToday?.success && todayEntries.length > 0;
-      setClockedIn(isIn);
-
-      // 3) (Re)fetch today’s route
-      try {
-        const rRes = await grabRouteProfileAndDate(
-          profile.id,
-          todayLocalYYYYMMDD,
-        );
-        const r: RouteRecord | null = rRes?.success ? rRes.data ?? null : null;
-        setRoute(r);
-        const sorted = sortStopsBySequence(r?.stops ?? []);
-        setStops(sorted);
-        setRouteAttempted(true);
-
-        if (isIn && r) {
-          await checkForStopAndAutoStart(sorted, r);
-        }
-
-        // If a route exists but the driver isn’t clocked in, give a helpful nudge.
-        if (!isIn && r) {
-          Alert.alert(
-            'Route assigned',
-            'A route is assigned for today. Clock in to view and start your stops.',
-          );
-        }
-      } catch {
-        setRoute(null);
-        setStops([]);
-        setRouteAttempted(true);
-      }
-    } catch (e: any) {
-      Alert.alert('Refresh failed', e?.message || 'Please try again.');
-    }
+    navigation.navigate('Stop' as never, { stop: r } as never);
   };
 
   const checkForStopAndAutoStart = async (list: Stop[], r: RouteRecord) => {
@@ -758,34 +718,28 @@ export default function DriverTodayScreen() {
 
     const sorted = sortStopsBySequence(list);
 
-    // If there are no stops at all, treat as not-done (could be "no route")
     if (sorted.length === 0) {
       setCurrentStop(null);
       setNextStop(null);
       setRemainingCount(0);
-      setAllDoneToday(false); // nothing assigned, not the same as "all done"
+      setAllDoneToday(false);
       return;
     }
 
-    // Count remaining (not done yet)
     const remaining = sorted.filter(s => !isStopDone(s));
     setRemainingCount(remaining.length);
 
-    // If nothing remains, we're all done
     if (remaining.length === 0) {
       setCurrentStop(null);
       setNextStop(null);
       setAllDoneToday(true);
       clearAutoTimer();
       setAutoStart(null);
-      await updateRoute;
       return;
     }
 
-    // From here on, there IS work left
     setAllDoneToday(false);
 
-    // Prefer an active stop (en_route or arrived)
     const active = remaining.find(
       s =>
         String(s.status).toLowerCase() === 'en_route' ||
@@ -804,13 +758,11 @@ export default function DriverTodayScreen() {
       return;
     }
 
-    // Otherwise pick the next scheduled (or any remaining) stop
     const next =
       remaining.find(s => String(s.status).toLowerCase() === 'scheduled') ??
       remaining[0];
 
     if (!next) {
-      // Safety: should have been caught by remaining.length === 0
       setCurrentStop(null);
       setNextStop(null);
       setAllDoneToday(true);
@@ -847,20 +799,12 @@ export default function DriverTodayScreen() {
     }, 1000);
   };
 
-  /* ─────────────── derived ─────────────── */
-
   useEffect(() => {
     const open = stops.filter(s => s.status !== 'completed');
     setCurrentStop(open[0] ?? null);
     setNextStop(open[1] ?? null);
     setRemainingCount(open.length);
   }, [stops]);
-
-  const driverDisplay: 'full' | 'single' = (
-    route?.driver_display === 'full' || route?.driver_display === 'single'
-      ? route.driver_display
-      : 'single'
-  ) as 'full' | 'single';
 
   const firstName =
     profile?.first_name || route?.driver_name?.split(' ')?.[0] || 'there';
@@ -915,7 +859,6 @@ export default function DriverTodayScreen() {
       </View>
 
       {/* Time/Break strip */}
-
       {needsCloseFromYesterday ? (
         <>
           <View
@@ -941,8 +884,7 @@ export default function DriverTodayScreen() {
           </View>
           <View style={tw`mx-4`}>
             <InfoBanner
-              text="You have a previously open timesheet that has not been closed. You
-              must close the previous timesheet in order to click in today."
+              text="You have a previously open timesheet that has not been closed. You must close the previous timesheet in order to click in today."
               colors={colors}
             />
           </View>
@@ -965,7 +907,7 @@ export default function DriverTodayScreen() {
                 ? breakOn
                   ? 'On Break'
                   : `Clocked in: ${hhmmFromISO(timeEntry?.[0]?.clock_in)}`
-                : 'Clocked out'}
+                : 'Start your day'}
             </Text>
           </View>
           {!allDoneToday ? (
@@ -982,7 +924,31 @@ export default function DriverTodayScreen() {
                   ) : (
                     <TinyButton
                       label={breakOn ? 'End Break' : 'Start Break'}
-                      onPress={breakOn ? stopBreak : addNewRouteBreak}
+                      onPress={
+                        breakOn
+                          ? stopBreak
+                          : async () => {
+                              if (!route?.id || !profile?.id || !business?.id)
+                                return;
+                              if (
+                                (breaks?.length ?? 0) <
+                                (route?.allowed_breaks ?? 0)
+                              ) {
+                                await newRouteBreak({
+                                  route_id: route?.id ?? 0,
+                                  profile_id: profile?.id ?? 0,
+                                  business_id: business?.id ?? 0,
+                                  started: new Date().toISOString(),
+                                });
+                                void grabAllRouteBreaks();
+                              } else {
+                                Alert.alert(
+                                  'Limit Reached',
+                                  'You have reached the maximum number of breaks for this route.',
+                                );
+                              }
+                            }
+                      }
                       colors={colors}
                       LeftIcon={breakOn ? X : Play}
                     />
@@ -1012,11 +978,10 @@ export default function DriverTodayScreen() {
         </View>
       )}
 
-      {/* ─────────────── ONLY show route content if clocked in ─────────────── */}
+      {/* Content */}
       {!clockedIn ? (
         <View />
       ) : !routeAttempted ? (
-        // still trying to fetch route → show a lightweight loader instead of "No route"
         <View style={[tw`flex-1 items-center justify-center`]}>
           <ActivityIndicator />
           <Text style={[tw`mt-2 text-xs`, { color: colors.muted }]}>
@@ -1035,7 +1000,7 @@ export default function DriverTodayScreen() {
           {closedTimeSheet ? (
             <View style={tw`px-4`}>
               <InfoBanner
-                text="You have clocked out. Todays route is complete. If you clocked out by mistake, you can contact your manager to re-open your timesheet."
+                text="You have clocked out. Today’s route is complete. If you clocked out by mistake, contact your manager to re-open your timesheet."
                 colors={colors}
               />
             </View>
@@ -1064,7 +1029,6 @@ export default function DriverTodayScreen() {
                       hhmmFromISO(route.planned_start_at)}
                   </Text>
 
-                  {/* Progress bar */}
                   <View
                     style={[
                       tw`h-2 rounded-full mt-3`,
@@ -1172,7 +1136,7 @@ export default function DriverTodayScreen() {
               >
                 Today’s Stops
               </Text>
-              <TouchableOpacity onPress={refreshToday}>
+              <TouchableOpacity onPress={() => void run()}>
                 <RefreshCcw
                   height={16}
                   width={16}
@@ -1210,6 +1174,64 @@ export default function DriverTodayScreen() {
             </View>
           </View>
         </>
+      )}
+
+      {/* Location Requirement Modal */}
+      {showLocModal && (
+        <View
+          style={[
+            tw`absolute inset-0 items-center justify-center px-6`,
+            { backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999 },
+          ]}
+        >
+          <View
+            style={[
+              tw`w-full rounded-2xl p-4`,
+              { backgroundColor: colors.card || '#0b1220' },
+            ]}
+          >
+            <Text style={[tw`text-lg font-bold`, { color: colors.text }]}>
+              {modalMode === 'need_permission'
+                ? 'Enable Location Access'
+                : 'Switch to “Always” Location'}
+            </Text>
+
+            <Text style={[tw`text-xs mt-2`, { color: colors.muted }]}>
+              We use your location for accurate directions and live tracking.
+              {'\n'}
+              <Text style={{ fontWeight: '600', color: colors.text }}>
+                Your location is only shared while you are clocked in.
+              </Text>{' '}
+              When you clock out, sharing stops.
+            </Text>
+
+            <TouchableOpacity
+              onPress={async () => {
+                await openAppSettings();
+                // When app returns, onReturnFromSettings() will trigger recheckLocationGate()
+              }}
+              style={[
+                tw`w-full mt-3 py-2 rounded-xl items-center`,
+                { backgroundColor: colors.brand?.primary || '#2563eb' },
+              ]}
+            >
+              <Text style={tw`text-white font-semibold text-sm`}>
+                {modalMode === 'need_permission'
+                  ? 'Open Settings to Enable Location'
+                  : 'Open Settings to Allow “Always”'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setShowLocModal(false)}
+              style={tw`self-end mt-3`}
+            >
+              <Text style={[tw`text-xs font-semibold`, { color: colors.text }]}>
+                Close
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
     </View>
   );
@@ -1445,7 +1467,7 @@ function StopRow({
                     <ActionPill
                       label="Continue to stop"
                       LeftIcon={NavIcon}
-                      onPress={() => onGoToRoute(item)}
+                      onPress={() => onGoToRoute(item as any)}
                       colors={colors}
                     />
                   ) : (

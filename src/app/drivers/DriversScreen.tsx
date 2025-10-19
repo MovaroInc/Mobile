@@ -1,5 +1,11 @@
 // src/app/drivers/DriversScreen.tsx
-import React, { useCallback, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -24,28 +30,29 @@ import {
   RefreshCcw,
   PlusCircle,
 } from 'react-native-feather';
-
 import Clipboard from '@react-native-clipboard/clipboard';
+import MapboxGL from '@rnmapbox/maps';
+MapboxGL.setAccessToken(
+  'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A',
+);
 
 import { useTheme } from '../../shared/hooks/useTheme';
 import { useSession } from '../../state/useSession';
 import { api } from '../../shared/lib/api';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
 import { getInviteByBusinessId } from '../../shared/lib/InviteHelpers';
-
-// ✅ Mapbox
-import MapboxGL from '@rnmapbox/maps';
 import { emitInboxEvent } from '../../shared/lib/inboxHelpers';
-MapboxGL.setAccessToken(
-  'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A',
-);
+import {
+  useLiveLocations,
+  lastSeenText,
+} from '../../shared/hooks/useLiveLocations';
 
 /* ───────────────── types ───────────────── */
 
 type DriverStatus = 'on_route' | 'available' | 'off_duty' | 'pending';
+
 type Driver = {
   id: number;
-  // unified fields (your API may return Profile/availability etc.)
   name?: string;
   phone?: string | null;
   email?: string | null;
@@ -63,7 +70,9 @@ type Driver = {
 
   last_seen_at?: string | null; // ISO
   route_name?: string | null;
-  next_eta?: string | null; // "12:45 PM"
+  next_eta?: string | null;
+
+  // live fields we hydrate from driver_location_live
   lat?: number | null;
   lng?: number | null;
   battery?: number | null;
@@ -97,12 +106,28 @@ type Invite = {
 type ViewMode = 'list' | 'map';
 type Tab = 'drivers' | 'invites';
 
+/* ───────────────── utils ───────────────── */
+
+function initials(name?: string) {
+  const parts = (name || '').trim().split(/\s+/);
+  const first = parts[0]?.[0] || '';
+  const last = parts[1]?.[0] || '';
+  return (first + last).toUpperCase() || 'DR';
+}
+const convertToYYYYMMDD = (date: string) => {
+  const [day, month, year] = date.split('/');
+  return `${year}-${month}-${day}`;
+};
+const selectedDate = convertToYYYYMMDD(new Date().toLocaleDateString());
+
 /* ───────────────── screen ───────────────── */
 
 export default function DriversScreen() {
   const nav = useNavigation<any>();
   const { colors } = useTheme();
   const { business } = useSession();
+  const { rowsMap } = useLiveLocations(business?.id);
+  console.log('rowsMap', rowsMap);
 
   // Tabs
   const [tab, setTab] = useState<Tab>('drivers');
@@ -125,6 +150,30 @@ export default function DriversScreen() {
     'pending',
   );
 
+  // Map refs
+  const cameraRef = useRef<MapboxGL.Camera>(null);
+
+  /* ─────────────── business center (map default) ─────────────── */
+  const businessCenter = useMemo<[number, number] | null>(() => {
+    const lng =
+      (business as any)?.longitude ??
+      (business as any)?.lng ??
+      (business as any)?.hq_lng;
+    const lat =
+      (business as any)?.latitude ??
+      (business as any)?.lat ??
+      (business as any)?.hq_lat;
+    return typeof lng === 'number' && typeof lat === 'number'
+      ? [lng, lat]
+      : null;
+  }, [business]);
+
+  const mapCenter = useMemo<[number, number]>(() => {
+    if (businessCenter) return businessCenter;
+    return [-98.35, 39.5]; // fallback (USA)
+  }, [businessCenter]);
+  const mapZoom = useMemo(() => (businessCenter ? 12 : 3), [businessCenter]);
+
   /* ─────────────── fetchers ─────────────── */
 
   const fetchDrivers = useCallback(async () => {
@@ -141,19 +190,14 @@ export default function DriversScreen() {
   }, [business?.id]);
 
   const fetchInvites = useCallback(async () => {
-    console.log('fetchInvites');
     if (!business?.id) return;
-    console.log('business?.id', business?.id);
     setLoadingInvites(true);
     try {
       const all = (await getInviteByBusinessId(business.id)) ?? [];
-      console.log('all', all);
-      // If your backend supports filtering by status in the URL, prefer that.
       const filtered =
         inviteFilter === 'all'
           ? all
           : all.data.filter((i: Invite) => i.status === inviteFilter);
-      console.log('filtered', filtered);
       setInvites(filtered);
       await emitInboxEvent(business.id);
     } catch {
@@ -167,7 +211,7 @@ export default function DriversScreen() {
     useCallback(() => {
       fetchDrivers();
       fetchInvites();
-    }, []),
+    }, []), // eslint-disable-line
   );
 
   const onRefresh = useCallback(async () => {
@@ -182,11 +226,33 @@ export default function DriversScreen() {
     setInviteRefreshing(false);
   }, [fetchInvites]);
 
-  /* ─────────────── derived ─────────────── */
+  /* ─────────────── merge driver base + live rows ─────────────── */
+
+  const driversWithLive = useMemo(() => {
+    if (!drivers?.length) return [];
+    return drivers.map(d => {
+      const live = rowsMap[d.profile_id];
+      return {
+        ...d,
+        lat: typeof live?.lat === 'number' ? live.lat : d.lat ?? null,
+        lng: typeof live?.lng === 'number' ? live.lng : d.lng ?? null,
+        battery:
+          typeof live?.battery_pct === 'number'
+            ? live.battery_pct
+            : d.battery ?? null,
+        last_seen_at:
+          (live?.updated_at || live?.client_ts || d.last_seen_at) ?? null,
+      };
+    });
+  }, [drivers, rowsMap]);
+
+  /* ─────────────── derived (filtering) ─────────────── */
 
   const filteredDrivers = useMemo(() => {
+    const list = driversWithLive;
+    console.log('list', list);
     const q = query.trim().toLowerCase();
-    return drivers.filter(d => {
+    return list.filter(d => {
       const fullName = [
         d?.Profile?.first_name ?? '',
         d?.Profile?.last_name ?? '',
@@ -207,75 +273,24 @@ export default function DriversScreen() {
 
       return matchesQuery && matchesStatus;
     });
-  }, [drivers, query, statusFilter]);
-
-  const filteredInvites = useMemo(() => {
-    const q = inviteQuery.trim().toLowerCase();
-    return invites.filter(i => {
-      const nm = [i.first_name, i.last_name].filter(Boolean).join(' ');
-      const matchesQuery =
-        !q ||
-        [nm, i.invited_email, i.invited_phone]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(q);
-      const matchesStatus =
-        inviteFilter === 'all' ? true : i.status === inviteFilter;
-      return matchesQuery && matchesStatus;
-    });
-  }, [invites, inviteQuery, inviteFilter]);
-
-  // Map helpers based on filteredDrivers
-  const coords = useMemo(
-    () =>
-      filteredDrivers
-        .filter(d => typeof d.lat === 'number' && typeof d.lng === 'number')
-        .map(d => [d.lng as number, d.lat as number] as [number, number]),
-    [filteredDrivers],
-  );
-
-  const mapCenter = useMemo<[number, number]>(() => {
-    if (coords.length > 0) {
-      const avgLng =
-        coords.reduce((sum, c) => sum + c[0], 0) / Math.max(1, coords.length);
-      const avgLat =
-        coords.reduce((sum, c) => sum + c[1], 0) / Math.max(1, coords.length);
-      return [avgLng, avgLat];
-    }
-    // fallback center (USA)
-    return [-98.35, 39.5];
-  }, [coords]);
-
-  const mapZoom = useMemo(() => {
-    if (coords.length === 0) return 3; // zoomed out
-    if (coords.length === 1) return 11;
-    if (coords.length < 5) return 8;
-    return 4;
-  }, [coords]);
+  }, [driversWithLive, query, statusFilter]);
 
   /* ─────────────── actions ─────────────── */
 
-  const onInvite = () => {
-    nav.navigate('DriverInvite');
-  };
-
-  const onOpenProfile = (driver: Driver) => {
+  const onInvite = () => nav.navigate('DriverInvite');
+  const onOpenProfile = (driver: Driver) =>
     nav.navigate('DriverProfile', { driverId: driver.id });
-  };
-
   const onCall = (driver: Driver) => {
     if (!driver.phone) return;
     Linking.openURL(`tel:${driver.phone}`);
   };
 
-  // Invite actions (assumes backend routes exist)
+  // Invite helpers
   const getInviteLink = async (inviteId: number) => {
     const res = await api.post('/invites/get-link', { inviteId });
     if (!res?.inviteLink) throw new Error('No inviteLink returned');
     return res.inviteLink as string;
   };
-
   const handleCopyLink = async (inv: Invite) => {
     try {
       const link = await getInviteLink(inv.id);
@@ -285,7 +300,6 @@ export default function DriversScreen() {
       Alert.alert('Copy failed', e?.message || 'Unable to copy link');
     }
   };
-
   const handleShareLink = async (inv: Invite) => {
     try {
       const link = await getInviteLink(inv.id);
@@ -294,7 +308,6 @@ export default function DriversScreen() {
       Alert.alert('Share failed', e?.message || 'Unable to share link');
     }
   };
-
   const handleResend = async (inv: Invite) => {
     try {
       await api.post('/invites/resend', { inviteId: inv.id });
@@ -304,7 +317,6 @@ export default function DriversScreen() {
       Alert.alert('Resend failed', e?.message || 'Unable to resend invite');
     }
   };
-
   const handleRevoke = async (inv: Invite) => {
     Alert.alert(
       'Revoke invite?',
@@ -333,7 +345,6 @@ export default function DriversScreen() {
       ],
     );
   };
-
   const handleDelete = async (inv: Invite) => {
     Alert.alert(
       'Delete invite?',
@@ -378,16 +389,7 @@ export default function DriversScreen() {
   const effectiveDriverStatus = (d: Driver): DriverStatus | undefined =>
     (d.availability || d.status) as DriverStatus | undefined;
 
-  const presenceText = (d: Driver) => {
-    if (!d.last_seen_at) return 'Last seen: —';
-    const mins = Math.max(
-      0,
-      Math.floor((Date.now() - new Date(d.last_seen_at).getTime()) / 60000),
-    );
-    if (mins < 1) return 'Last seen: just now';
-    if (mins === 1) return 'Last seen: 1 min ago';
-    return `Last seen: ${mins} mins ago`;
-  };
+  const presenceText = (d: Driver) => lastSeenText(d.last_seen_at);
 
   const driverName = (d: Driver) =>
     d?.name ||
@@ -411,8 +413,45 @@ export default function DriversScreen() {
     }
   };
 
-  /* ─────────────── action menu (drivers) ─────────────── */
+  const metaLine = (d: Driver) => {
+    const st = (d.availability || d.status) as DriverStatus | undefined;
+    if (st === 'on_route') {
+      const eta = d.next_eta ? ` • ETA ${d.next_eta}` : '';
+      const route = d.route_name ? ` • ${d.route_name}` : '';
+      return `On Route${route}${eta}`;
+    }
+    if (st === 'available') return 'Available';
+    if (st === 'pending') return 'Pending invite';
+    return 'Off Duty';
+  };
 
+  function MapLabel({ text, style }: { text: string; style?: any }) {
+    return (
+      <View
+        style={[
+          {
+            paddingHorizontal: 6,
+            paddingVertical: 3,
+            borderRadius: 6,
+            backgroundColor: '#fff',
+            shadowColor: '#000',
+            shadowOpacity: 0.15,
+            shadowRadius: 2,
+            elevation: 2,
+            borderWidth: 0.5,
+            borderColor: 'rgba(0,0,0,0.06)',
+          },
+          style,
+        ]}
+      >
+        <Text style={{ fontSize: 11, fontWeight: '600', color: '#111' }}>
+          {text}
+        </Text>
+      </View>
+    );
+  }
+
+  /* ─────────────── action menu (drivers) ─────────────── */
   const ActionMenu = () => {
     if (!actionDriver) return null;
     return (
@@ -489,6 +528,8 @@ export default function DriversScreen() {
 
   /* ─────────────── render ─────────────── */
 
+  console.log('filteredDrivers', filteredDrivers);
+
   return (
     <View style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
       {/* Header + Tabs */}
@@ -500,7 +541,7 @@ export default function DriversScreen() {
 
       <View style={tw`px-4 w-full mb-4`}>
         <View style={tw`flex-row bg-black/20 rounded-xl`}>
-          {(['drivers', 'invites'] as TabKey[]).map(k => {
+          {(['drivers', 'invites'] as const).map(k => {
             const active = tab === k;
             return (
               <TouchableOpacity
@@ -638,7 +679,7 @@ export default function DriversScreen() {
                   key={s}
                   active={inviteFilter === s}
                   onPress={() => setInviteFilter(s)}
-                  label={s === 'all' ? 'All' : s[0].toUpperCase() + s.slice(1)}
+                  label={s[0].toUpperCase() + s.slice(1)}
                   colors={colors}
                 />
               ),
@@ -653,7 +694,7 @@ export default function DriversScreen() {
           loading ? (
             <CenteredLoader colors={colors} text="Loading drivers…" />
           ) : filteredDrivers.length === 0 ? (
-            <EmptyState
+            <EmptyListState
               colors={colors}
               onInvite={onInvite}
               queryActive={!!query || statusFilter !== 'all'}
@@ -678,7 +719,11 @@ export default function DriversScreen() {
                 }
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    onPress={() => onOpenProfile(item)}
+                    onPress={() =>
+                      nav.navigate('DriverOverview', {
+                        profileId: item.profile_id,
+                      })
+                    }
                     style={[
                       tw`flex-row items-center px-2 py-2 mb-2 mt-2 rounded-xl`,
                       { backgroundColor: colors.main },
@@ -700,7 +745,8 @@ export default function DriversScreen() {
                           height: 12,
                           borderRadius: 6,
                           backgroundColor: statusColor(
-                            effectiveDriverStatus(item) || 'available',
+                            (effectiveDriverStatus(item) ||
+                              'available') as DriverStatus,
                           ),
                           borderWidth: 2,
                           borderColor: colors.main,
@@ -831,11 +877,54 @@ export default function DriversScreen() {
               compassEnabled
             >
               <MapboxGL.Camera
+                ref={cameraRef}
                 centerCoordinate={mapCenter}
                 zoomLevel={mapZoom}
                 animationMode="flyTo"
                 animationDuration={600}
               />
+
+              {/* HQ pin with white label */}
+              {businessCenter && (
+                <MapboxGL.PointAnnotation id="hq" coordinate={businessCenter}>
+                  <View
+                    style={[
+                      tw`items-center justify-center`,
+                      { transform: [{ translateY: -6 }] },
+                    ]}
+                  >
+                    <MapLabel
+                      text={business?.name ? `${business.name} (HQ)` : 'HQ'}
+                      style={{ transform: [{ translateY: -26 }] }}
+                    />
+                    <View
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 11,
+                        backgroundColor: '#111827',
+                        borderWidth: 2,
+                        borderColor: '#fff',
+                        shadowColor: '#000',
+                        shadowOpacity: 0.2,
+                        shadowRadius: 2,
+                        elevation: 2,
+                      }}
+                    />
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        tw`text-2xs mt-1.5 px-2 py-1 rounded-2 bg-white font-bold`,
+                        { color: '#111' },
+                      ]}
+                    >
+                      {'HQ'}
+                    </Text>
+                  </View>
+                </MapboxGL.PointAnnotation>
+              )}
+
+              {/* Driver pins (merged with driver_location_live) */}
               {filteredDrivers
                 .filter(
                   d => typeof d.lat === 'number' && typeof d.lng === 'number',
@@ -853,6 +942,12 @@ export default function DriversScreen() {
                         { transform: [{ translateY: -6 }] },
                       ]}
                     >
+                      <MapLabel
+                        text={`${driverName(d)} • ${lastSeenText(
+                          d.last_seen_at,
+                        )}`}
+                        style={{ transform: [{ translateY: -26 }] }}
+                      />
                       <View
                         style={{
                           width: 18,
@@ -872,14 +967,14 @@ export default function DriversScreen() {
                       />
                       <Text
                         numberOfLines={1}
-                        style={[tw`text-2xs mt-0.5`, { color: '#111' }]}
+                        style={[
+                          tw`text-2xs mt-2 px-3 py-1 rounded-2 bg-white font-semibold`,
+                          { color: '#111' },
+                        ]}
                       >
-                        {initials(driverName(d))}
+                        {driverName(d)}
                       </Text>
                     </View>
-                    <MapboxGL.Callout
-                      title={`${driverName(d)}\n${metaLine(d)}`}
-                    />
                   </MapboxGL.PointAnnotation>
                 ))}
             </MapboxGL.MapView>
@@ -909,7 +1004,7 @@ export default function DriversScreen() {
               All Invites:
             </Text>
             <FlatList
-              data={filteredInvites}
+              data={invites}
               keyExtractor={i => String(i.id)}
               contentContainerStyle={tw`px-4 pb-20`}
               refreshControl={
@@ -951,16 +1046,6 @@ export default function DriversScreen() {
                   </Text>
 
                   <View style={tw`flex-row mt-2`}>
-                    {/* <SmallBtn
-                      label="Copy Link"
-                      onPress={() => handleCopyLink(item)}
-                      colors={colors}
-                    />
-                    <SmallBtn
-                      label="Share"
-                      onPress={() => handleShareLink(item)}
-                      colors={colors}
-                    /> */}
                     <SmallBtn
                       label="Resend"
                       onPress={() => handleResend(item)}
@@ -991,7 +1076,7 @@ export default function DriversScreen() {
   );
 }
 
-/* ───────────────── helpers & tiny components ───────────────── */
+/* ───────────────── helpers & tiny components ──────────────── */
 
 function Toggle({
   active,
@@ -1048,7 +1133,7 @@ function FilterChip({
   );
 }
 
-function EmptyState({
+function EmptyListState({
   colors,
   onInvite,
   queryActive,
@@ -1176,25 +1261,6 @@ function CenteredLoader({ colors, text }: { colors: any; text: string }) {
   );
 }
 
-function initials(name?: string) {
-  const parts = (name || '').trim().split(/\s+/);
-  const first = parts[0]?.[0] || '';
-  const last = parts[1]?.[0] || '';
-  return (first + last).toUpperCase() || 'DR';
-}
-
-function metaLine(d: Driver) {
-  const st = (d.availability || d.status) as DriverStatus | undefined;
-  if (st === 'on_route') {
-    const eta = d.next_eta ? ` • ETA ${d.next_eta}` : '';
-    const route = d.route_name ? ` • ${d.route_name}` : '';
-    return `On Route${route}${eta}`;
-  }
-  if (st === 'available') return 'Available';
-  if (st === 'pending') return 'Pending invite';
-  return 'Off Duty';
-}
-
 /* Bottom-sheet action button */
 function SheetButton({
   label,
@@ -1217,8 +1283,8 @@ function SheetButton({
   disabled?: boolean;
   description?: string;
 }) {
-  const bg = danger ? 'rgba(239,68,68,0.12)' : colors.border; // red-500 @ 12% if danger
-  const fg = danger ? '#ef4444' : colors.text; // red-500 text if danger
+  const bg = danger ? 'rgba(239,68,68,0.12)' : colors.border;
+  const fg = danger ? '#ef4444' : colors.text;
   const opacity = disabled ? 0.6 : 1;
 
   return (
