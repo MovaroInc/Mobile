@@ -11,6 +11,8 @@
 		23A557AA780A608E321A9A19 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		8D4946332EA62F96003F9030 /* APNSTokenManager 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4946322EA62F96003F9030 /* APNSTokenManager 2.swift */; };
+		8D4946342EA62F96003F9030 /* APNSTokenManagerBridge 2.m in Sources */ = {isa = PBXBuildFile; fileRef = 8D4946312EA62F96003F9030 /* APNSTokenManagerBridge 2.m */; };
 		CC63F7E5B215678806F0A00B /* libPods-Movaro.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 89DED428A7DF832C06FFB07E /* libPods-Movaro.a */; };
 /* End PBXBuildFile section */
 
@@ -23,6 +25,9 @@
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Movaro/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		89DED428A7DF832C06FFB07E /* libPods-Movaro.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Movaro.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8D3787612E80732E00C73FA3 /* Movaro.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = Movaro.entitlements; path = Movaro/Movaro.entitlements; sourceTree = "<group>"; };
+		8D4946312EA62F96003F9030 /* APNSTokenManagerBridge 2.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "APNSTokenManagerBridge 2.m"; sourceTree = "<group>"; };
+		8D4946322EA62F96003F9030 /* APNSTokenManager 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APNSTokenManager 2.swift"; sourceTree = "<group>"; };
+		8D4946352EA62F99003F9030 /* Movaro-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Movaro-Bridging-Header.h"; sourceTree = "<group>"; };
 		B05A6137CBCF93381A0A1350 /* Pods-Movaro.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Movaro.release.xcconfig"; path = "Target Support Files/Pods-Movaro/Pods-Movaro.release.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F9214BDC2D7957E2260A9EB6 /* Pods-Movaro.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Movaro.debug.xcconfig"; path = "Target Support Files/Pods-Movaro/Pods-Movaro.debug.xcconfig"; sourceTree = "<group>"; };
@@ -43,12 +48,15 @@
 		13B07FAE1A68108700A75B9A /* Movaro */ = {
 			isa = PBXGroup;
 			children = (
+				8D4946312EA62F96003F9030 /* APNSTokenManagerBridge 2.m */,
+				8D4946322EA62F96003F9030 /* APNSTokenManager 2.swift */,
 				8D3787612E80732E00C73FA3 /* Movaro.entitlements */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				8D4946352EA62F99003F9030 /* Movaro-Bridging-Header.h */,
 			);
 			name = Movaro;
 			sourceTree = "<group>";
@@ -133,7 +141,7 @@
 				LastUpgradeCheck = 1210;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
-						LastSwiftMigration = 1120;
+						LastSwiftMigration = 1640;
 					};
 				};
 			};
@@ -193,9 +201,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Movaro/Pods-Movaro-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Movaro/Pods-Movaro-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -210,9 +222,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Movaro/Pods-Movaro-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Movaro/Pods-Movaro-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -249,6 +265,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				8D4946332EA62F96003F9030 /* APNSTokenManager 2.swift in Sources */,
+				8D4946342EA62F96003F9030 /* APNSTokenManagerBridge 2.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,6 +299,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.movaroinc.movaro;
 				PRODUCT_NAME = Movaro;
+				SWIFT_OBJC_BRIDGING_HEADER = "Movaro-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -312,6 +331,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.movaroinc.movaro;
 				PRODUCT_NAME = Movaro;
+				SWIFT_OBJC_BRIDGING_HEADER = "Movaro-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
 			};

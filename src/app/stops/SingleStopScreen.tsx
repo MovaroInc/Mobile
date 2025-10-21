@@ -51,6 +51,7 @@ import {
 } from '../../shared/lib/ImageHelpers';
 import { useSession } from '../../state/useSession';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBusinessAdmin } from '../../shared/lib/BusinessHelpers';
 
 const DevMode = true;
 
@@ -500,10 +501,43 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
       });
       setStop(updatedStop.data);
       Alert.alert('Arrived', 'Arrival has been recorded.');
+
+      await createNotification(
+        'Driver Arrived',
+        `${profile?.first_name} ${profile?.last_name?.[0]}. has arrived at ${stop.business_name}`,
+      );
       setShowAll(true);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to mark arrival.');
     }
+  };
+
+  const createNotification = async (title: string, body: string) => {
+    const admin = await getBusinessAdmin(business?.id ?? 0);
+    if (admin.data.length > 0) {
+      // Use map to create an array of Promises and Promise.all to await them
+      const sendPromises = admin.data.map(async (a: any) => {
+        console.log('admin found', a);
+        const payload = {
+          title: title,
+          body: body,
+          data: 'This is notification data',
+          token: a?.profile.device[0]?.apns_token, // Fixed potential typo: 'prfile' -> 'profile'
+          token_type: Platform.OS,
+          sendAt: 1000,
+        };
+        const res = await sendNotification(payload);
+        return res?.success; // Return the success status of the send attempt
+      });
+
+      // Wait for all notifications to attempt sending
+      const results = await Promise.all(sendPromises);
+
+      // You can return true if at least one notification succeeded,
+      // or simply true since the waiting is the key part.
+      return results.some(success => success);
+    }
+    return true;
   };
 
   // ───────── photos: add/remove/upload ─────────
@@ -610,6 +644,11 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
         payloadPayment,
       );
       console.log('updatedPayment', updatedPayment);
+
+      await createNotification(
+        'Stop Completed',
+        `${profile?.first_name} ${profile?.last_name?.[0]}. has completed stop at ${stop.business_name}`,
+      );
 
       setStop(updated.data);
       setConfirmVisible(false);

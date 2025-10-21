@@ -1,6 +1,13 @@
 // src/screens/Auth/LegalAgreementsScreen.tsx
 import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, Alert, Linking } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  Linking,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from 'twrnc';
 import * as Feather from 'react-native-feather';
@@ -18,6 +25,7 @@ import {
 import { grabCurrentLocation } from '../../shared/lib/locations';
 import StepRow from '../../shared/components/info/StepRow';
 import { toE164US } from '../../shared/utils/phone';
+import { storeNotificationToken } from '../../shared/lib/notifications';
 const CreatingProfileScreen = () => {
   const { colors } = useTheme();
   const navigation = useNavigation<any>();
@@ -94,10 +102,31 @@ const CreatingProfileScreen = () => {
         createdEmployee,
         createdCustomer,
       );
+      await createDevice(createdProfile);
       await sendEmail();
     } catch (error) {
       console.error(error);
     }
+  };
+
+  const createDevice = async (createdProfile: any) => {
+    const token = await AsyncStorage.getItem('@apns_device_token');
+    console.log('[APNSTokenManager] Token saved to AsyncStorage');
+    if (createdProfile.id) {
+      const payload = {
+        apns_token: token,
+        platform: 'ios',
+        apns_env: 'production',
+        device_model: Platform.select({
+          ios: 'iPhone',
+          android: 'Android',
+        }),
+        os_version: Platform.OS,
+        profile_id: createdProfile.id,
+      };
+      await storeNotificationToken(payload);
+    }
+    return true;
   };
 
   const createProfile = async () => {
@@ -202,7 +231,7 @@ const CreatingProfileScreen = () => {
       usr?.id,
       'active',
       'full_time',
-      'business owner',
+      'Admin',
       null,
       null,
       new Date().toISOString(),

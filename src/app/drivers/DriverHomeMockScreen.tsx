@@ -53,6 +53,8 @@ import {
 
 // 🔴 IMPORTANT: no ".ts" extension here
 import { startLiveFeed, stopLiveFeed } from '../../shared/lib/liveFeed';
+import { getBusinessAdmin } from '../../shared/lib/BusinessHelpers';
+import { sendNotification } from '../../shared/lib/notifications';
 
 /* ───────────────── types ───────────────── */
 
@@ -190,6 +192,7 @@ export default function DriverTodayScreen() {
   const [loading, setLoading] = useState(true);
 
   const [clockedIn, setClockedIn] = useState(false);
+  const [clockedOut, setClockedOut] = useState(false);
   const [timeEntry, setTimeEntry] = useState<any[]>([]);
   const [yesterdayTimeEntry, setYesterdayTimeEntry] = useState<any[]>([]);
 
@@ -311,8 +314,10 @@ export default function DriverTodayScreen() {
         profile.id,
         todayLocalYYYYMMDD,
       );
+      console.log('resToday', resToday.data[0]);
       if (resToday?.data?.[0]?.clock_in && resToday?.data?.[0]?.clock_out) {
         setClosedTimeSheet(true);
+        setClockedOut(true);
       }
 
       const isClockedIn =
@@ -402,6 +407,10 @@ export default function DriverTodayScreen() {
         ended: nowIso,
         ...(typeof minutes_lapsed === 'number' ? { minutes_lapsed } : {}),
       });
+      await createNotification(
+        'Break Ended',
+        `${profile?.first_name} ${profile?.last_name?.[0]}. has ended a break`,
+      );
       void grabAllRouteBreaks();
     }
   };
@@ -540,7 +549,11 @@ export default function DriverTodayScreen() {
         Alert.alert('Clock out failed', res?.message || 'Please try again.');
         return;
       }
-
+      setClockedOut(true);
+      await createNotification(
+        'Clocked Out',
+        `${profile?.first_name} ${profile?.last_name?.[0]}. has clocked out`,
+      );
       // stop live feed immediately
       stopLiveFeed();
       liveCleanupRef.current?.();
@@ -612,7 +625,11 @@ export default function DriverTodayScreen() {
       if (res?.success) {
         setTimeEntry(res.data || []);
         setClockedIn(true); // <- live feed starts via effect
-        void run(); // fetch route/stops
+        await createNotification(
+          'New Clock In',
+          `${profile?.first_name} ${profile?.last_name?.[0]}. has clocked in`,
+        );
+        run(); // fetch route/stops
       } else {
         Alert.alert('Clock in failed', res?.message || 'Try again.');
       }
@@ -621,6 +638,34 @@ export default function DriverTodayScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const createNotification = async (title: string, body: string) => {
+    const admin = await getBusinessAdmin(business?.id ?? 0);
+    if (admin.data.length > 0) {
+      // Use map to create an array of Promises and Promise.all to await them
+      const sendPromises = admin.data.map(async (a: any) => {
+        console.log('admin found', a);
+        const payload = {
+          title: title,
+          body: body,
+          data: 'This is notification data',
+          token: a?.profile.device[0]?.apns_token, // Fixed potential typo: 'prfile' -> 'profile'
+          token_type: Platform.OS,
+          sendAt: 1000,
+        };
+        const res = await sendNotification(payload);
+        return res?.success; // Return the success status of the send attempt
+      });
+
+      // Wait for all notifications to attempt sending
+      const results = await Promise.all(sendPromises);
+
+      // You can return true if at least one notification succeeded,
+      // or simply true since the waiting is the key part.
+      return results.some(success => success);
+    }
+    return true;
   };
 
   const navigateTo = async (s: Stop) => {
@@ -910,68 +955,80 @@ export default function DriverTodayScreen() {
                 : 'Start your day'}
             </Text>
           </View>
-          {!allDoneToday ? (
+          {clockedOut ? null : (
             <>
-              {clockedIn ? (
+              {!allDoneToday ? (
                 <>
-                  {!route ? (
-                    <TinyButton
-                      label="Clock Out"
-                      onPress={() => {}}
-                      colors={colors}
-                      LeftIcon={Play}
-                    />
+                  {clockedIn ? (
+                    <>
+                      {!route ? (
+                        <TinyButton
+                          label="Clock Out"
+                          onPress={handleClockOut}
+                          colors={colors}
+                          LeftIcon={Play}
+                        />
+                      ) : (
+                        <TinyButton
+                          label={breakOn ? 'End Break' : 'Start Break'}
+                          onPress={
+                            breakOn
+                              ? stopBreak
+                              : async () => {
+                                  if (
+                                    !route?.id ||
+                                    !profile?.id ||
+                                    !business?.id
+                                  )
+                                    return;
+                                  if (
+                                    (breaks?.length ?? 0) <
+                                    (route?.allowed_breaks ?? 0)
+                                  ) {
+                                    await newRouteBreak({
+                                      route_id: route?.id ?? 0,
+                                      profile_id: profile?.id ?? 0,
+                                      business_id: business?.id ?? 0,
+                                      started: new Date().toISOString(),
+                                    });
+                                    await createNotification(
+                                      'Break Started',
+                                      `${profile?.first_name} ${profile?.last_name?.[0]}. has started a break`,
+                                    );
+                                    void grabAllRouteBreaks();
+                                  } else {
+                                    Alert.alert(
+                                      'Limit Reached',
+                                      'You have reached the maximum number of breaks for this route.',
+                                    );
+                                  }
+                                }
+                          }
+                          colors={colors}
+                          LeftIcon={breakOn ? X : Play}
+                        />
+                      )}
+                    </>
                   ) : (
                     <TinyButton
-                      label={breakOn ? 'End Break' : 'Start Break'}
-                      onPress={
-                        breakOn
-                          ? stopBreak
-                          : async () => {
-                              if (!route?.id || !profile?.id || !business?.id)
-                                return;
-                              if (
-                                (breaks?.length ?? 0) <
-                                (route?.allowed_breaks ?? 0)
-                              ) {
-                                await newRouteBreak({
-                                  route_id: route?.id ?? 0,
-                                  profile_id: profile?.id ?? 0,
-                                  business_id: business?.id ?? 0,
-                                  started: new Date().toISOString(),
-                                });
-                                void grabAllRouteBreaks();
-                              } else {
-                                Alert.alert(
-                                  'Limit Reached',
-                                  'You have reached the maximum number of breaks for this route.',
-                                );
-                              }
-                            }
-                      }
+                      label="Clock In"
+                      onPress={handleClockIn}
                       colors={colors}
-                      LeftIcon={breakOn ? X : Play}
+                      LeftIcon={Play}
                     />
                   )}
                 </>
               ) : (
-                <TinyButton
-                  label="Clock In"
-                  onPress={handleClockIn}
-                  colors={colors}
-                  LeftIcon={Play}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              {closedTimeSheet ? null : (
-                <TinyButton
-                  label="Clock Out"
-                  onPress={handleClockOut}
-                  colors={colors}
-                  LeftIcon={Play}
-                />
+                <>
+                  {closedTimeSheet ? null : (
+                    <TinyButton
+                      label="Clock Out"
+                      onPress={handleClockOut}
+                      colors={colors}
+                      LeftIcon={Play}
+                    />
+                  )}
+                </>
               )}
             </>
           )}

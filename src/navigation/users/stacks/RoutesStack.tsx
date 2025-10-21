@@ -14,6 +14,7 @@ import RouteAnalyticsScreen from '../../../app/routes/RouteAnalyticsScreen';
 import EditRouteScreen from '../../../app/routes/EditRouteScreen';
 import DriverOverviewScreen from '../../../app/drivers/DriverOverviewScreen';
 import AnalyticsScreen from '../../../app/routes/AnalyticsScreen';
+import EditRouteStopsScreen from '../../../app/routes/EditRouteStopsScreen';
 type AuthParamList = {
   Routes: undefined;
   CreateRouteStep1: undefined;
@@ -24,10 +25,11 @@ type AuthParamList = {
   AddStopScreen3: { routeId: number; stopsCount: number };
   StopSummaryEditScreen: { stop: any };
   RouteAnalytics: undefined;
-  EditRouteScreen: { route: any };
+  EditRouteScreen: { routeId: any; payload: any };
   SingleStopScreen: { stop: any };
   DriverOverview: { driverId: number };
   Analytics: undefined;
+  EditRouteStopsScreen: { routeId: number; payload: any };
 };
 const Stack = createStackNavigator<AuthParamList>();
 
@@ -61,6 +63,10 @@ export default function RoutesStack() {
       <Stack.Screen name="EditRouteScreen" component={EditRouteScreen} />
       <Stack.Screen name="DriverOverview" component={DriverOverviewScreen} />
       <Stack.Screen name="Analytics" component={AnalyticsScreen} />
+      <Stack.Screen
+        name="EditRouteStopsScreen"
+        component={EditRouteStopsScreen}
+      />
     </Stack.Navigator>
   );
 }

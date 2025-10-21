@@ -1,5 +1,11 @@
 // src/app/routes/RouteScreen.tsx
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   View,
   Text,
@@ -9,6 +15,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Platform,
 } from 'react-native';
 import tw from 'twrnc';
 import { useTheme } from '../../shared/hooks/useTheme';
@@ -40,6 +47,11 @@ import {
 } from '../../shared/lib/RouteHelpers';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
 import { phoneDigits } from '../../shared/utils/FormatPhoneNumber';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  sendNotification,
+  storeNotificationToken,
+} from '../../shared/lib/notifications';
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
@@ -135,7 +147,7 @@ const convertToYYYYMMDD = (date: string) => {
 export default function RouteScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
-  const { business } = useSession();
+  const { business, profile } = useSession();
 
   const items = buildDateRange(8); // [{ date, iso, label }] (may be UTC-based in your util)
 
@@ -157,6 +169,20 @@ export default function RouteScreen() {
   const [routes, setRoutes] = useState<DBRoute[]>([]);
   const [draftRoutes, setDraftRoutes] = useState<DBRoute[]>([]);
   const [drivers, setDrivers] = useState<UiDriver[]>([]);
+
+  const testNotification = async () => {
+    console.log('profile', profile);
+    console.log('os', Platform.OS);
+    const payload = {
+      title: 'Test Notification',
+      body: 'This is a test notification',
+      data: 'This is notification data',
+      token: profile?.device[0]?.apns_token,
+      token_type: Platform.OS,
+      sendAt: 1000,
+    };
+    await sendNotification(payload);
+  };
 
   // Load drivers + routes when business/date changes
   useFocusEffect(
@@ -197,6 +223,28 @@ export default function RouteScreen() {
       })();
     }, [business?.id, selectedDate]),
   );
+
+  useLayoutEffect(() => {
+    if (!profile?.id) return;
+    (async () => {
+      const apn_token = await AsyncStorage.getItem('@apns_device_token');
+      console.log('[APNSTokenManager] Token saved to AsyncStorage');
+      if (profile?.id && apn_token) {
+        const payload = {
+          apns_token: apn_token,
+          platform: 'ios',
+          apns_env: 'production',
+          device_model: Platform.select({
+            ios: 'iPhone',
+            android: 'Android',
+          }),
+          os_version: Platform.OS,
+          profile_id: profile?.id,
+        };
+        await storeNotificationToken(payload);
+      }
+    })();
+  }, [profile?.id]);
 
   const onRefresh = async () => {
     if (!business?.id) return;
@@ -329,6 +377,19 @@ export default function RouteScreen() {
         </Text>
         <View style={tw`flex-row items-center`}>
           {loading ? <ActivityIndicator /> : null}
+          <TouchableOpacity
+            onPress={() => testNotification()}
+            style={[
+              tw`p-2 rounded-2 ml-3`,
+              {
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.borderSecondary,
+              },
+            ]}
+          >
+            <AlertTriangle width={16} height={16} color={colors.text} />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => navigation.navigate('Analytics')}
             style={[
@@ -482,7 +543,7 @@ export default function RouteScreen() {
                   }
                   onOpen={() => {
                     if (route?.id)
-                      navigation.navigate('RouteDraftScreen', {
+                      navigation.navigate('EditRouteStopsScreen', {
                         routeId: route.id,
                         payload: route,
                       });
@@ -670,9 +731,11 @@ export default function RouteScreen() {
               })}
             </View>
           ) : (
-            <Text style={[tw`text-xs mt-4`, { color: '#9CA3AF' }]}>
-              No routes for this day.
-            </Text>
+            <View>
+              <Text style={[tw`text-xs mt-4`, { color: '#9CA3AF' }]}>
+                No routes for this day. Create a new route below.
+              </Text>
+            </View>
           )}
         </View>
       </ScrollView>

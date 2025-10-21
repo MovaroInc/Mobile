@@ -37,10 +37,14 @@ import {
   createUserAccount,
   updateProfileWithEmployeeId,
 } from '../../shared/lib/authHelpers';
-import { getBusinessById } from '../../shared/lib/BusinessHelpers';
+import {
+  getBusinessAdmin,
+  getBusinessById,
+} from '../../shared/lib/BusinessHelpers';
 import { getSubscriptionByBusinessId } from '../../shared/lib/SubscriptionHelpers';
 import { grabCurrentLocation } from '../../shared/lib/locations';
 import { CreateInbox } from '../../shared/lib/inboxHelpers';
+import { sendNotification } from '../../shared/lib/notifications';
 
 type RootStackParamList = {
   DriverSignup: { inviteId?: string } | undefined;
@@ -345,6 +349,34 @@ export default function DriverSignupScreen() {
     });
   };
 
+  const createNotification = async (title: string, body: string) => {
+    const admin = await getBusinessAdmin(invite.business_id ?? 0);
+    if (admin.data.length > 0) {
+      // Use map to create an array of Promises and Promise.all to await them
+      const sendPromises = admin.data.map(async (a: any) => {
+        console.log('admin found', a);
+        const payload = {
+          title: title,
+          body: body,
+          data: 'This is notification data',
+          token: a?.profile.device[0]?.apns_token, // Fixed potential typo: 'prfile' -> 'profile'
+          token_type: Platform.OS,
+          sendAt: 1000,
+        };
+        const res = await sendNotification(payload);
+        return res?.success; // Return the success status of the send attempt
+      });
+
+      // Wait for all notifications to attempt sending
+      const results = await Promise.all(sendPromises);
+
+      // You can return true if at least one notification succeeded,
+      // or simply true since the waiting is the key part.
+      return results.some(success => success);
+    }
+    return true;
+  };
+
   const handleSubmit = async () => {
     if (!canSubmit) {
       Alert.alert('Check form', 'Please fix the validation errors.');
@@ -408,6 +440,11 @@ export default function DriverSignupScreen() {
         Alert.alert('Error', employeeError.message);
         return;
       }
+
+      await createNotification(
+        'Driver Added',
+        `${firstName} ${lastName} was added as a Driver.`,
+      );
 
       await createInboxForInviteAccepted({
         businessId: invite.business_id,

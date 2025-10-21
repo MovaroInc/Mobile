@@ -30,6 +30,7 @@ import { useTheme } from '../../shared/hooks/useTheme';
 import { useSession } from '../../state/useSession';
 import { api } from '../../shared/lib/api';
 import { supabase } from '../../shared/lib/supabase';
+import { updateNotification } from '../../shared/lib/notifications';
 
 export default function ProfileScreen() {
   const nav = useNavigation<any>();
@@ -65,7 +66,12 @@ export default function ProfileScreen() {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      if (profile?.id) {
+        await updateNotification(profile?.id, {
+          apns_token: '',
+        });
+      }
+      await await supabase.auth.signOut();
     } catch (e: any) {
       // Still clear local session if your provider listens to auth state
     }

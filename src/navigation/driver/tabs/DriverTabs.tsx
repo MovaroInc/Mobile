@@ -53,26 +53,6 @@ export default function DriverTabs() {
           ),
         }}
       />
-      {/* <Tab.Screen
-        name="DriverMap"
-        component={MapStackNavigator}
-        options={{
-          title: 'Map',
-          tabBarIcon: ({ color, size }) => (
-            <MapIcon width={size} height={size} color={color} />
-          ),
-        }}
-      /> */}
-      {/* <Tab.Screen
-        name="DriverInbox"
-        component={InboxStackNavigator}
-        options={{
-          title: 'Inbox',
-          tabBarIcon: ({ color, size }) => (
-            <Bell width={size} height={size} color={color} />
-          ),
-        }}
-      /> */}
       <Tab.Screen
         name="DriverProfile"
         component={ProfileStackNavigator}

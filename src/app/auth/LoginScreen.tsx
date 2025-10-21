@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../shared/hooks/useTheme';
 import tw, { style } from 'twrnc';
@@ -12,6 +19,8 @@ import Config from 'react-native-config';
 import axios from 'axios';
 import { api } from '../../shared/lib/api';
 import { useSession } from '../../state/useSession';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storeNotificationToken } from '../../shared/lib/notifications';
 const LoginScreen = () => {
   const { colors } = useTheme(); // colors.bg, colors.text, colors.brand.primary, etc.
   const navigation = useNavigation();

@@ -138,8 +138,8 @@ export default function CreateRouteStep1Screen() {
 
   const [loading, setLoading] = useState(false);
 
-  const [endBase, setEndBase] = useState(false);
-  const [startBase, setStartBase] = useState(false);
+  const [endBase, setEndBase] = useState(true);
+  const [startBase, setStartBase] = useState(true);
   const [breaksAmount, setBreaksAmount] = useState('2');
 
   useLayoutEffect(() => {
