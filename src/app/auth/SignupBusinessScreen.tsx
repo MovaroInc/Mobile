@@ -131,126 +131,129 @@ const SignupBusinessScreen = () => {
   };
 
   return (
-    <SafeAreaView style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
-      <View style={tw`flex-1 items-center justify-between`}>
-        {/* Accent bar */}
-        <View style={tw`w-full flex-1 items-center justify-start`}>
-          <View
-            style={[
-              tw`w-1/3 h-2 mt-6 rounded-full`,
-              { backgroundColor: colors.brand.primary },
-            ]}
-          />
+    <View
+      style={[
+        tw`flex-1 items-center justify-between`,
+        { backgroundColor: colors.bg },
+      ]}
+    >
+      {/* Accent bar */}
+      <View style={tw`w-full flex-1 items-center justify-start`}>
+        <View
+          style={[
+            tw`w-1/3 h-2 mt-6 rounded-full`,
+            { backgroundColor: colors.brand.primary },
+          ]}
+        />
 
-          {/* Title */}
-          {/* <Image source={Logo} style={tw`w-14 h-14 mt-8`} /> */}
-          <View style={tw`mt-4`}>
-            <Text style={[tw`text-2xl font-semibold`, { color: colors.text }]}>
-              Signup
-            </Text>
-          </View>
-          <View style={tw`w-11/12 mt-4`}>
-            <Text style={[tw`text-xl`, { color: colors.text }]}>
-              Business Details
-            </Text>
-          </View>
-          <View
-            style={[
-              tw`w-11/12 rounded-3 mt-4 border`,
-              { borderColor: colors.border, backgroundColor: colors.card },
-            ]}
-          >
-            <AuthInput
-              value={name}
-              onChangeText={setName}
-              secureTextEntry={false}
-              placeholder="Name"
-              icon="User"
-              showSecure={false}
-              toggleSecure={() => {}}
-              isValid={true}
-              required={true}
-              message={null}
-            />
-            <AuthInput
-              value={phone}
-              onChangeText={t => setPhone(formatPhoneUS(t))}
-              secureTextEntry={false}
-              placeholder="Phone"
-              icon="Phone"
-              showSecure={false}
-              toggleSecure={() => {}}
-              isValid={true}
-              required={true}
-              message={null}
-              keyboardType="phone-pad"
-            />
-            <AuthInput
-              value={industry}
-              onChangeText={setIndustry}
-              secureTextEntry={false}
-              placeholder="Industry"
-              icon="Briefcase"
-              showSecure={false}
-              toggleSecure={() => {}}
-              isValid={true}
-              required={false}
-              message={null}
-            />
-            <AuthInput
-              value={address}
-              onChangeText={handleSearchAddress}
-              secureTextEntry={false}
-              placeholder="Address"
-              icon="Map"
-              showSecure={false}
-              toggleSecure={() => {}}
-              isValid={true}
-              required={true}
-              message={null}
-            />
-            <View style={tw`w-full max-h-33 overflow-hidden`}>
-              {suggestions.map(suggestion => (
-                <TouchableOpacity
-                  key={suggestion.place_id}
-                  onPress={() => {
-                    setAddress(suggestion.description);
-                    setSuggestions([]);
-                    getPlaceCoordinates(suggestion.description);
-                  }}
-                  style={[
-                    tw`w-full p-2 border-b`,
-                    { borderColor: colors.border },
-                  ]}
+        {/* Title */}
+        {/* <Image source={Logo} style={tw`w-14 h-14 mt-8`} /> */}
+        <View style={tw`mt-4`}>
+          <Text style={[tw`text-2xl font-semibold`, { color: colors.text }]}>
+            Signup
+          </Text>
+        </View>
+        <View style={tw`w-11/12 mt-4`}>
+          <Text style={[tw`text-xl`, { color: colors.text }]}>
+            Business Details
+          </Text>
+        </View>
+        <View
+          style={[
+            tw`w-11/12 rounded-3 mt-4 border`,
+            { borderColor: colors.border, backgroundColor: colors.card },
+          ]}
+        >
+          <AuthInput
+            value={name}
+            onChangeText={setName}
+            secureTextEntry={false}
+            placeholder="Name"
+            icon="User"
+            showSecure={false}
+            toggleSecure={() => {}}
+            isValid={true}
+            required={true}
+            message={null}
+          />
+          <AuthInput
+            value={phone}
+            onChangeText={t => setPhone(formatPhoneUS(t))}
+            secureTextEntry={false}
+            placeholder="Phone"
+            icon="Phone"
+            showSecure={false}
+            toggleSecure={() => {}}
+            isValid={true}
+            required={true}
+            message={null}
+            keyboardType="phone-pad"
+          />
+          <AuthInput
+            value={industry}
+            onChangeText={setIndustry}
+            secureTextEntry={false}
+            placeholder="Industry"
+            icon="Briefcase"
+            showSecure={false}
+            toggleSecure={() => {}}
+            isValid={true}
+            required={false}
+            message={null}
+          />
+          <AuthInput
+            value={address}
+            onChangeText={handleSearchAddress}
+            secureTextEntry={false}
+            placeholder="Address"
+            icon="Map"
+            showSecure={false}
+            toggleSecure={() => {}}
+            isValid={true}
+            required={true}
+            message={null}
+          />
+          <View style={tw`w-full max-h-33 overflow-hidden`}>
+            {suggestions.map(suggestion => (
+              <TouchableOpacity
+                key={suggestion.place_id}
+                onPress={() => {
+                  setAddress(suggestion.description);
+                  setSuggestions([]);
+                  getPlaceCoordinates(suggestion.description);
+                }}
+                style={[
+                  tw`w-full p-2 border-b`,
+                  { borderColor: colors.border },
+                ]}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[tw`text-sm p-1`, { color: colors.text }]}
                 >
-                  <Text
-                    numberOfLines={1}
-                    style={[tw`text-sm p-1`, { color: colors.text }]}
-                  >
-                    {suggestion.description}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-          <View style={tw`mt-4 w-11/12`}>
-            <AuthBotton
-              label="Continue Signup"
-              loading={false}
-              onPress={onContinuePress}
-            />
-          </View>
-          <View style={tw`mt-4 flex-row items-center justify-center`}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={tw`ml-2`}
-            >
-              <Text style={[tw`text-sm font-bold text-sky-600`]}>Back</Text>
-            </TouchableOpacity>
+                  {suggestion.description}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
+        <View style={tw`mt-4 w-11/12`}>
+          <AuthBotton
+            label="Continue Signup"
+            loading={false}
+            onPress={onContinuePress}
+          />
+        </View>
+        <View style={tw`mt-4 flex-row items-center justify-center`}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={tw`ml-2`}
+          >
+            <Text style={[tw`text-sm font-bold text-sky-600`]}>Back</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 

@@ -57,97 +57,100 @@ const SignupBusinessProfileScreen = () => {
   };
 
   return (
-    <SafeAreaView style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
-      <View style={tw`flex-1 items-center justify-between`}>
-        {/* Accent bar */}
-        <View style={tw`w-full flex-1 items-center justify-start`}>
-          <View
-            style={[
-              tw`w-1/3 h-2 mt-6 rounded-full`,
-              { backgroundColor: colors.brand.primary },
-            ]}
-          />
+    <View
+      style={[
+        tw`flex-1 items-center justify-between`,
+        { backgroundColor: colors.bg },
+      ]}
+    >
+      {/* Accent bar */}
+      <View style={tw`w-full flex-1 items-center justify-start`}>
+        <View
+          style={[
+            tw`w-1/3 h-2 mt-6 rounded-full`,
+            { backgroundColor: colors.brand.primary },
+          ]}
+        />
 
-          {/* Title */}
-          {/* <Image source={Logo} style={tw`w-14 h-14 mt-8`} /> */}
-          <View style={tw`mt-4`}>
-            <Text style={[tw`text-2xl font-semibold`, { color: colors.text }]}>
-              Signup
-            </Text>
-          </View>
-          <View style={tw`w-11/12 mt-4`}>
-            <Text style={[tw`text-xl`, { color: colors.text }]}>
-              Profile Info
-            </Text>
-          </View>
-          <View
-            style={[
-              tw`w-11/12 rounded-3 mt-4 border`,
-              { borderColor: colors.border, backgroundColor: colors.card },
-            ]}
-          >
-            <View style={tw`flex-row items-center justify-between`}>
-              <View style={tw`w-[48%]`}>
-                <AuthInput
-                  value={firstName}
-                  onChangeText={handleFirstNameChange}
-                  secureTextEntry={false}
-                  placeholder="First Name"
-                  icon="User"
-                  showSecure={false}
-                  toggleSecure={() => {}}
-                  isValid={true}
-                  required={true}
-                  message={null}
-                />
-              </View>
-              <View style={tw`w-[48%]`}>
-                <AuthInput
-                  value={lastName}
-                  onChangeText={handleLastNameChange}
-                  secureTextEntry={false}
-                  placeholder="Last Name"
-                  icon="User"
-                  showSecure={false}
-                  toggleSecure={() => {}}
-                  isValid={true}
-                  required={true}
-                  message={null}
-                />
-              </View>
+        {/* Title */}
+        {/* <Image source={Logo} style={tw`w-14 h-14 mt-8`} /> */}
+        <View style={tw`mt-4`}>
+          <Text style={[tw`text-2xl font-semibold`, { color: colors.text }]}>
+            Signup
+          </Text>
+        </View>
+        <View style={tw`w-11/12 mt-4`}>
+          <Text style={[tw`text-xl`, { color: colors.text }]}>
+            Profile Info
+          </Text>
+        </View>
+        <View
+          style={[
+            tw`w-11/12 rounded-3 mt-4 border`,
+            { borderColor: colors.border, backgroundColor: colors.card },
+          ]}
+        >
+          <View style={tw`flex-row items-center justify-between`}>
+            <View style={tw`w-[48%]`}>
+              <AuthInput
+                value={firstName}
+                onChangeText={handleFirstNameChange}
+                secureTextEntry={false}
+                placeholder="First Name"
+                icon="User"
+                showSecure={false}
+                toggleSecure={() => {}}
+                isValid={true}
+                required={true}
+                message={null}
+              />
             </View>
-            <AuthInput
-              value={phone}
-              onChangeText={t => setPhone(formatPhoneUS(t))}
-              secureTextEntry={false}
-              placeholder="Phone Number"
-              icon="Phone"
-              showSecure={false}
-              toggleSecure={() => {}}
-              isValid={true}
-              required={true}
-              message={null}
-              keyboardType="phone-pad"
-            />
+            <View style={tw`w-[48%]`}>
+              <AuthInput
+                value={lastName}
+                onChangeText={handleLastNameChange}
+                secureTextEntry={false}
+                placeholder="Last Name"
+                icon="User"
+                showSecure={false}
+                toggleSecure={() => {}}
+                isValid={true}
+                required={true}
+                message={null}
+              />
+            </View>
           </View>
-          <View style={tw`mt-4 w-11/12`}>
-            <AuthBotton
-              label="Setup Business Profile"
-              loading={false}
-              onPress={onContinuePress}
-            />
-          </View>
-          <View style={tw`mt-8 flex-row items-center justify-center`}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={tw`ml-2`}
-            >
-              <Text style={[tw`text-sm font-bold text-sky-600`]}>Back</Text>
-            </TouchableOpacity>
-          </View>
+          <AuthInput
+            value={phone}
+            onChangeText={t => setPhone(formatPhoneUS(t))}
+            secureTextEntry={false}
+            placeholder="Phone Number"
+            icon="Phone"
+            showSecure={false}
+            toggleSecure={() => {}}
+            isValid={true}
+            required={true}
+            message={null}
+            keyboardType="phone-pad"
+          />
+        </View>
+        <View style={tw`mt-4 w-11/12`}>
+          <AuthBotton
+            label="Setup Business Profile"
+            loading={false}
+            onPress={onContinuePress}
+          />
+        </View>
+        <View style={tw`mt-8 flex-row items-center justify-center`}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={tw`ml-2`}
+          >
+            <Text style={[tw`text-sm font-bold text-sky-600`]}>Back</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 

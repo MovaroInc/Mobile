@@ -378,19 +378,6 @@ export default function RouteScreen() {
         <View style={tw`flex-row items-center`}>
           {loading ? <ActivityIndicator /> : null}
           <TouchableOpacity
-            onPress={() => testNotification()}
-            style={[
-              tw`p-2 rounded-2 ml-3`,
-              {
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.borderSecondary,
-              },
-            ]}
-          >
-            <AlertTriangle width={16} height={16} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
             onPress={() => navigation.navigate('Analytics')}
             style={[
               tw`p-2 rounded-2 ml-3`,
@@ -523,9 +510,27 @@ export default function RouteScreen() {
               </Text>
             }
             ListEmptyComponent={
-              <Text style={[tw`text-xs mt-2`, { color: '#9CA3AF' }]}>
-                No drivers found.
-              </Text>
+              <View style={tw`flex-1 items-center justify-center`}>
+                <Text style={[tw`text-base mt-2`, { color: colors.muted }]}>
+                  No drivers were found.
+                </Text>
+                <Text style={[tw`text-base mb-2`, { color: colors.muted }]}>
+                  You can add a driver from the drivers screen.
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  style={[
+                    tw`px-3 py-2 rounded-full flex-row items-center mt-4`,
+                    { backgroundColor: colors.brand.primary },
+                  ]}
+                  onPress={() => navigation.navigate('DriversTab')}
+                >
+                  <PlusCircle width={18} height={18} color="#fff" />
+                  <Text style={tw`text-white ml-2 font-semibold`}>
+                    Add Driver
+                  </Text>
+                </TouchableOpacity>
+              </View>
             }
             renderItem={({ item }) => {
               const route =
@@ -553,87 +558,6 @@ export default function RouteScreen() {
             }}
           />
 
-          {/* Routes preview */}
-          {/* {view.allRoutes.length > 0 ? (
-            <View style={tw`mt-3`}>
-              <Text
-                style={[tw`text-xl mb-2 font-semibold`, { color: colors.text }]}
-              >
-                Routes
-              </Text>
-              {routes.map(r => {
-                const stopsCount = r.stops?.length ?? 0;
-                const durationMin =
-                  (r.stops ?? []).reduce(
-                    (sum, s) => sum + (s.planned_service_minutes ?? 10),
-                    0,
-                  ) || stopsCount * 10;
-                const driverName =
-                  drivers.find(d => d.id === r.employee_id)?.name ??
-                  'Unassigned';
-                const startHM = r.planned_start_at
-                  ? new Date(r.planned_start_at).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  : '';
-                return (
-                  <TouchableOpacity
-                    key={r.id}
-                    activeOpacity={0.85}
-                    onPress={() =>
-                      navigation.navigate('RouteDraftScreen', {
-                        routeId: r.id,
-                        payload: r,
-                      })
-                    }
-                    style={[
-                      tw`mb-3 px-4 py-3 rounded-2xl`,
-                      { backgroundColor: colors.borderSecondary },
-                    ]}
-                  >
-                    <View style={tw`flex-row items-center justify-between`}>
-                      <Text
-                        style={[
-                          tw`text-base font-semibold`,
-                          { color: colors.text },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {r.name}
-                      </Text>
-                      <StatusPill status={r.status} colors={colors} />
-                    </View>
-
-                    <View style={tw`flex-row items-center mt-2`}>
-                      <Truck width={14} height={14} color="#9CA3AF" />
-                      <Text
-                        style={tw`text-gray-400 text-xs ml-1`}
-                        numberOfLines={1}
-                      >
-                        {driverName}
-                      </Text>
-                      <View style={tw`w-3`} />
-                      <Navigation width={14} height={14} color="#9CA3AF" />
-                      <Text style={tw`text-gray-400 text-xs ml-1`}>
-                        {stopsCount} stops
-                      </Text>
-                      <View style={tw`w-3`} />
-                      <Clock width={14} height={14} color="#9CA3AF" />
-                      <Text style={tw`text-gray-400 text-xs ml-1`}>
-                        {toHM(durationMin)}
-                        {startHM ? ` • ${startHM}` : ''}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : (
-            <Text style={[tw`text-xs mt-4`, { color: '#9CA3AF' }]}>
-              No routes for this day.
-            </Text>
-          )} */}
           {draftRoutes.length > 0 ? (
             <View style={tw`mt-3`}>
               <Text
@@ -731,11 +655,24 @@ export default function RouteScreen() {
               })}
             </View>
           ) : (
-            <View>
-              <Text style={[tw`text-xs mt-4`, { color: '#9CA3AF' }]}>
-                No routes for this day. Create a new route below.
+            <>
+              <Text
+                style={[
+                  tw`text-xl mb-2 font-semibold mt-8`,
+                  { color: colors.text },
+                ]}
+              >
+                Drafted Routes
               </Text>
-            </View>
+              <View style={tw`flex-1 items-center justify-center`}>
+                <Text style={[tw`text-base mt-4`, { color: colors.muted }]}>
+                  No routes for this day.
+                </Text>
+                <Text style={[tw`text-base mb-2`, { color: colors.muted }]}>
+                  Create a new route below.
+                </Text>
+              </View>
+            </>
           )}
         </View>
       </ScrollView>

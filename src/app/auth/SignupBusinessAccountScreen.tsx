@@ -108,105 +108,108 @@ const SignupBusinessAccountScreen = () => {
   };
 
   return (
-    <SafeAreaView style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
-      <View style={tw`flex-1 items-center justify-between`}>
-        {/* Accent bar */}
-        <View style={tw`w-full flex-1 items-center justify-start`}>
-          <View
-            style={[
-              tw`w-1/3 h-2 mt-6 rounded-full`,
-              { backgroundColor: colors.brand.primary },
-            ]}
-          />
+    <View
+      style={[
+        tw`flex-1 items-center justify-between`,
+        { backgroundColor: colors.bg },
+      ]}
+    >
+      {/* Accent bar */}
+      <View style={tw`w-full flex-1 items-center justify-start`}>
+        <View
+          style={[
+            tw`w-1/3 h-2 mt-6 rounded-full`,
+            { backgroundColor: colors.brand.primary },
+          ]}
+        />
 
-          {/* Title */}
-          {/* <Image source={Logo} style={tw`w-14 h-14 mt-8`} /> */}
-          <View style={tw`mt-4`}>
-            <Text style={[tw`text-2xl font-semibold`, { color: colors.text }]}>
-              Signup
-            </Text>
-          </View>
-          <View style={tw`w-11/12 mt-4`}>
-            <Text style={[tw`text-xl`, { color: colors.text }]}>
-              Account Details
-            </Text>
-          </View>
-          <View
-            style={[
-              tw`w-11/12 rounded-3 mt-4 border`,
-              { borderColor: colors.border, backgroundColor: colors.card },
-            ]}
+        {/* Title */}
+        {/* <Image source={Logo} style={tw`w-14 h-14 mt-8`} /> */}
+        <View style={tw`mt-4`}>
+          <Text style={[tw`text-2xl font-semibold`, { color: colors.text }]}>
+            Signup
+          </Text>
+        </View>
+        <View style={tw`w-11/12 mt-4`}>
+          <Text style={[tw`text-xl`, { color: colors.text }]}>
+            Account Details
+          </Text>
+        </View>
+        <View
+          style={[
+            tw`w-11/12 rounded-3 mt-4 border`,
+            { borderColor: colors.border, backgroundColor: colors.card },
+          ]}
+        >
+          <AuthInput
+            value={email}
+            onChangeText={onEmailChange}
+            secureTextEntry={false}
+            placeholder="Email"
+            icon="Mail"
+            showSecure={false}
+            toggleSecure={() => {}}
+            isValid={validEmail}
+            required={true}
+            message={emailError}
+          />
+          <AuthInput
+            value={password}
+            onChangeText={onPasswordChange}
+            secureTextEntry={showPassword}
+            placeholder="Password"
+            icon="Lock"
+            showSecure={true}
+            toggleSecure={() => setShowPassword(!showPassword)}
+            isValid={validPassword}
+            required={true}
+            message={passwordError}
+          />
+          <AuthInput
+            value={verifyPassword}
+            onChangeText={onVerifyPasswordChange}
+            secureTextEntry={showVerifyPassword}
+            placeholder="Verify Password"
+            icon="Lock"
+            showSecure={true}
+            toggleSecure={() => setShowVerifyPassword(!showVerifyPassword)}
+            isValid={validVerifyPassword}
+            required={true}
+            message={verifyPasswordError}
+          />
+          <AuthInput
+            value={username}
+            onChangeText={onUsernameChange}
+            secureTextEntry={false}
+            placeholder="Username"
+            icon="User"
+            showSecure={false}
+            toggleSecure={() => {}}
+            isValid={validUsername}
+            required={false}
+            message={usernameError}
+          />
+        </View>
+        <View style={tw`mt-4 w-11/12`}>
+          <AuthBotton
+            label="Continue Signup"
+            loading={false}
+            onPress={onContinuePress}
+          />
+        </View>
+        <View style={tw`mt-8 flex-row items-center justify-center`}>
+          <Text style={[tw`text-sm`, { color: colors.text }]}>
+            Have an account?
+          </Text>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={tw`ml-2`}
           >
-            <AuthInput
-              value={email}
-              onChangeText={onEmailChange}
-              secureTextEntry={false}
-              placeholder="Email"
-              icon="Mail"
-              showSecure={false}
-              toggleSecure={() => {}}
-              isValid={validEmail}
-              required={true}
-              message={emailError}
-            />
-            <AuthInput
-              value={password}
-              onChangeText={onPasswordChange}
-              secureTextEntry={showPassword}
-              placeholder="Password"
-              icon="Lock"
-              showSecure={true}
-              toggleSecure={() => setShowPassword(!showPassword)}
-              isValid={validPassword}
-              required={true}
-              message={passwordError}
-            />
-            <AuthInput
-              value={verifyPassword}
-              onChangeText={onVerifyPasswordChange}
-              secureTextEntry={showVerifyPassword}
-              placeholder="Verify Password"
-              icon="Lock"
-              showSecure={true}
-              toggleSecure={() => setShowVerifyPassword(!showVerifyPassword)}
-              isValid={validVerifyPassword}
-              required={true}
-              message={verifyPasswordError}
-            />
-            <AuthInput
-              value={username}
-              onChangeText={onUsernameChange}
-              secureTextEntry={false}
-              placeholder="Username"
-              icon="User"
-              showSecure={false}
-              toggleSecure={() => {}}
-              isValid={validUsername}
-              required={false}
-              message={usernameError}
-            />
-          </View>
-          <View style={tw`mt-4 w-11/12`}>
-            <AuthBotton
-              label="Continue Signup"
-              loading={false}
-              onPress={onContinuePress}
-            />
-          </View>
-          <View style={tw`mt-8 flex-row items-center justify-center`}>
-            <Text style={[tw`text-sm`, { color: colors.text }]}>
-              Have an account?
-            </Text>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={tw`ml-2`}
-            >
-              <Text style={[tw`text-sm font-bold text-sky-600`]}>Login</Text>
-            </TouchableOpacity>
-          </View>
+            <Text style={[tw`text-sm font-bold text-sky-600`]}>Login</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 

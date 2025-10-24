@@ -100,102 +100,105 @@ const AcceptingLegalScreen = () => {
   );
 
   return (
-    <SafeAreaView style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
-      <View style={tw`flex-1 items-center justify-between`}>
-        {/* Accent bar */}
-        <View style={tw`w-full flex-1 items-center justify-start`}>
-          <View
-            style={[
-              tw`w-1/3 h-2 mt-6 rounded-full`,
-              { backgroundColor: colors.brand.primary },
-            ]}
-          />
+    <View
+      style={[
+        tw`flex-1 items-center justify-between`,
+        { backgroundColor: colors.bg },
+      ]}
+    >
+      {/* Accent bar */}
+      <View style={tw`w-full flex-1 items-center justify-start`}>
+        <View
+          style={[
+            tw`w-1/3 h-2 mt-6 rounded-full`,
+            { backgroundColor: colors.brand.primary },
+          ]}
+        />
 
-          {/* Title */}
-          {/* <Image source={Logo} style={tw`w-14 h-14 mt-8`} /> */}
-          <View style={tw`mt-4`}>
-            <Text style={[tw`text-2xl font-semibold`, { color: colors.text }]}>
-              Signup
-            </Text>
-          </View>
-          <View style={tw`w-11/12 mt-4`}>
-            <Text style={[tw`text-xl`, { color: colors.text }]}>
-              Business Details
-            </Text>
-            <Text style={[tw`mt-2 text-xs`, { color: colors.muted }]}>
-              To finish creating your Movaro account, please review and accept
-              the following documents.
-            </Text>
-          </View>
+        {/* Title */}
+        {/* <Image source={Logo} style={tw`w-14 h-14 mt-8`} /> */}
+        <View style={tw`mt-4`}>
+          <Text style={[tw`text-2xl font-semibold`, { color: colors.text }]}>
+            Signup
+          </Text>
+        </View>
+        <View style={tw`w-11/12 mt-4`}>
+          <Text style={[tw`text-xl`, { color: colors.text }]}>
+            Business Details
+          </Text>
+          <Text style={[tw`mt-2 text-xs`, { color: colors.muted }]}>
+            To finish creating your Movaro account, please review and accept the
+            following documents.
+          </Text>
+        </View>
 
-          {/* Card */}
-          <View style={[tw`w-12/12 rounded-3 mt-4 p-4`]}>
-            {ITEMS.map(item => (
-              <View key={item.key} style={tw`mb-4`}>
-                <View style={tw`flex-row items-center`}>
-                  <TouchableOpacity
-                    onPress={() => toggle(item.key)}
-                    style={tw`flex-row items-center flex-1`}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: accepted[item.key] }}
-                  >
-                    <Checkbox checked={accepted[item.key]} />
-                    <Text style={[tw`text-base`, { color: colors.text }]}>
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
+        {/* Card */}
+        <View style={[tw`w-12/12 rounded-3 mt-4 p-4`]}>
+          {ITEMS.map(item => (
+            <View key={item.key} style={tw`mb-4`}>
+              <View style={tw`flex-row items-center`}>
+                <TouchableOpacity
+                  onPress={() => toggle(item.key)}
+                  style={tw`flex-row items-center flex-1`}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: accepted[item.key] }}
+                >
+                  <Checkbox checked={accepted[item.key]} />
+                  <Text style={[tw`text-base`, { color: colors.text }]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
 
-                  <TouchableOpacity
-                    onPress={() => openLink(item.url)}
-                    hitSlop={8}
-                  >
-                    <Text style={tw`text-sm font-bold text-sky-600`}>View</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  onPress={() => openLink(item.url)}
+                  hitSlop={8}
+                >
+                  <Text style={tw`text-sm font-bold text-sky-600`}>View</Text>
+                </TouchableOpacity>
               </View>
-            ))}
-
-            {/* Select all */}
-            <TouchableOpacity
-              onPress={() => setAll(!allAccepted)}
-              style={tw`flex-row items-center mt-1`}
-            >
-              <Checkbox checked={allAccepted} />
-              <Text style={[tw`text-sm`, { color: colors.text }]}>
-                Accept all
-              </Text>
-            </TouchableOpacity>
-            <View style={tw`w-full mt-6`}>
-              <AuthBotton
-                label="Complete Signup"
-                loading={false}
-                onPress={onContinue}
-              />
             </View>
-          </View>
+          ))}
 
-          {/* Continue */}
-
-          {/* Back */}
-          <View style={tw`mt-4 flex-row items-center justify-center`}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={tw`ml-2`}
-            >
-              <Text style={tw`text-sm font-bold text-sky-600`}>Back</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Footer */}
-          <View style={tw`w-11/12 mt-auto mb-6`}>
-            <Text style={[tw`text-xs text-center`, { color: colors.muted }]}>
-              You can change this anytime in Settings. Movaro uses location only
-              for business operations while you’re on shift.
+          {/* Select all */}
+          <TouchableOpacity
+            onPress={() => setAll(!allAccepted)}
+            style={tw`flex-row items-center mt-1`}
+          >
+            <Checkbox checked={allAccepted} />
+            <Text style={[tw`text-sm`, { color: colors.text }]}>
+              Accept all
             </Text>
+          </TouchableOpacity>
+          <View style={tw`w-full mt-6`}>
+            <AuthBotton
+              label="Complete Signup"
+              loading={false}
+              onPress={onContinue}
+            />
           </View>
         </View>
+
+        {/* Continue */}
+
+        {/* Back */}
+        <View style={tw`mt-4 flex-row items-center justify-center`}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={tw`ml-2`}
+          >
+            <Text style={tw`text-sm font-bold text-sky-600`}>Back</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer */}
+        <View style={tw`w-11/12 mt-auto mb-6`}>
+          <Text style={[tw`text-xs text-center`, { color: colors.muted }]}>
+            You can change this anytime in Settings. Movaro uses location only
+            for business operations while you’re on shift.
+          </Text>
+        </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 

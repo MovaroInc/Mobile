@@ -513,28 +513,42 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
   };
 
   const createNotification = async (title: string, body: string) => {
+    // NOTE: The original code used 'invite.business_id', but the context was 'business.id'.
+    // I'm using 'invite.business_id' as provided in your prompt, but verify this is correct.
     const admin = await getBusinessAdmin(business?.id ?? 0);
+    console.log('admin list', admin);
+
     if (admin.data.length > 0) {
-      // Use map to create an array of Promises and Promise.all to await them
-      const sendPromises = admin.data.map(async (a: any) => {
+      // 1. FILTER: First, filter the admin data to only include those with a valid apns_token.
+      const adminsWithToken = admin.data.filter((a: any) => {
+        const token = a?.profile?.device?.[0]?.apns_token;
+        // A concise check for a non-empty string: it's not null/undefined AND its length > 0
+        return typeof token === 'string' && token.length > 0;
+      });
+
+      // 2. MAP: Then, create an array of Promises only for the filtered admins.
+      const sendPromises = adminsWithToken.map(async (a: any) => {
         console.log('admin found', a);
+        const token = a.profile.device[0].apns_token;
+
         const payload = {
           title: title,
           body: body,
           data: 'This is notification data',
-          token: a?.profile.device[0]?.apns_token, // Fixed potential typo: 'prfile' -> 'profile'
+          token: token,
           token_type: Platform.OS,
           sendAt: 1000,
         };
+
         const res = await sendNotification(payload);
         return res?.success; // Return the success status of the send attempt
       });
 
-      // Wait for all notifications to attempt sending
+      // 3. AWAIT: Wait for all successful promises to complete.
+      // If 'adminsWithToken' is empty, 'sendPromises' is empty, and Promise.all resolves immediately.
       const results = await Promise.all(sendPromises);
 
-      // You can return true if at least one notification succeeded,
-      // or simply true since the waiting is the key part.
+      // Return true if at least one notification attempt was successful.
       return results.some(success => success);
     }
     return true;

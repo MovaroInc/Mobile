@@ -13,6 +13,7 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import tw from 'twrnc';
 import { useTheme } from '../../shared/hooks/useTheme';
@@ -85,6 +86,8 @@ export default function OperationScreen() {
     [],
   );
 
+  const [loading, setLoading] = useState(true);
+
   useFocusEffect(
     useCallback(() => {
       loadRecords();
@@ -101,8 +104,19 @@ export default function OperationScreen() {
     } = await grabVendors(business?.id);
     setCustomers(data.data);
     setVendors(vendorData.data);
-    setFilteredCustomers(data.data);
-    setFilteredVendors(vendorData.data);
+    console.log('business?.customer_id', business?.customer_id);
+    console.log('business?.vendor_id', business?.vendor_id);
+    const nonDefaultCustomers = data.data.filter(
+      (c: any) => c.id !== business?.customer_id,
+    );
+    const nonDefaultVendors = vendorData.data.filter(
+      (v: any) => v.id !== business?.vendor_id,
+    );
+    console.log('nonDefaultCustomers', nonDefaultCustomers);
+    console.log('nonDefaultVendors', nonDefaultVendors);
+    setFilteredCustomers(nonDefaultCustomers);
+    setFilteredVendors(nonDefaultVendors);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -217,7 +231,8 @@ export default function OperationScreen() {
       </View>
 
       {/* Body */}
-      {tab === 'Customers' && (
+
+      {tab === 'Customers' && !loading && (
         <FlatList
           data={filteredCustomers}
           keyExtractor={i => String(i.id)}
@@ -226,6 +241,12 @@ export default function OperationScreen() {
             console.log(item);
             return (
               <TouchableOpacity
+                onPress={() => {
+                  navigation.navigate('PartyOverview', {
+                    id: item.id,
+                    mode: 'customer',
+                  });
+                }}
                 style={[
                   tw`mb-3 px-4 py-3 rounded-2xl`,
                   { backgroundColor: 'rgba(255,255,255,0.06)' },
@@ -309,37 +330,108 @@ export default function OperationScreen() {
         />
       )}
 
-      {tab === 'Vendors' && (
+      {tab === 'Vendors' && !loading && (
         <FlatList
           data={filteredVendors}
           keyExtractor={i => String(i.id)}
           contentContainerStyle={tw`px-4 pb-28`}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                tw`mb-3 px-4 py-3 rounded-2xl`,
-                { backgroundColor: 'rgba(255,255,255,0.06)' },
-              ]}
-            >
-              <Text
-                style={[tw`text-base font-semibold`, { color: colors.text }]}
+          renderItem={({ item }) => {
+            console.log(item);
+            return (
+              <TouchableOpacity
+                onPress={() => {
+                  navigation.navigate('PartyOverview', {
+                    id: item.id,
+                    mode: 'vendor',
+                  });
+                }}
+                style={[
+                  tw`mb-3 px-4 py-3 rounded-2xl`,
+                  { backgroundColor: 'rgba(48, 48, 48, 0.06)' },
+                ]}
               >
-                {item.name}
-              </Text>
-              <Text style={[tw`text-sm mt-0.5`, { color: '#9CA3AF' }]}>
-                {item.type || '—'}
-              </Text>
-              <Text style={[tw`text-sm`, { color: '#9CA3AF' }]}>
-                {item.city
-                  ? `${item.city}${item.state ? `, ${item.state}` : ''}`
-                  : '—'}
-              </Text>
-            </TouchableOpacity>
-          )}
+                <View style={tw`flex-row justify-between items-center`}>
+                  <Text
+                    style={[
+                      tw`text-base font-semibold`,
+                      { color: colors.text },
+                    ]}
+                  >
+                    {item.name} {item.default ? '(Default)' : null}
+                  </Text>
+                  <View style={tw`flex-row items-center`}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        navigation.navigate('EditParty', {
+                          mode: 'customer',
+                          record: item,
+                        });
+                      }}
+                      style={tw`px-2 py-1 mr-1`}
+                    >
+                      <Edit3 width={16} height={16} color={colors.accent} />
+                    </TouchableOpacity>
+                    {item.default ? null : (
+                      <TouchableOpacity
+                        onPress={() => {
+                          handleDeleteCustomer(item.id);
+                        }}
+                        style={tw`px-2 py-1`}
+                      >
+                        <Trash2 width={16} height={16} color={'red'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+                <View style={tw`flex-row items-center mt-2`}>
+                  <Phone width={14} height={14} color={colors.muted} />
+                  <Text style={[tw`text-sm ml-2`, { color: colors.muted }]}>
+                    {item.phone || '—'}
+                  </Text>
+                </View>
+                <View style={tw`flex-row items-center mt-2`}>
+                  <MapPin width={14} height={14} color={colors.muted} />
+                  <Text style={[tw`text-sm ml-2`, { color: colors.muted }]}>
+                    {item.city
+                      ? `${item.address_line1}, ${item.city}${
+                          item.region ? `, ${item.region}` : ''
+                        }`
+                      : '—'}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    tw`h-1 w-full my-2`,
+                    { backgroundColor: colors.border },
+                  ]}
+                />
+                <View style={tw`flex-row items-center`}>
+                  <View style={tw`flex-row items-center`}>
+                    <User width={14} height={14} color={colors.muted} />
+                    <Text style={[tw`text-sm ml-2`, { color: colors.muted }]}>
+                      {item.contact_name || '—'}
+                    </Text>
+                  </View>
+                  <View style={tw`flex-row items-center ml-4`}>
+                    <Phone width={14} height={14} color={colors.muted} />
+                    <Text style={[tw`text-sm ml-2`, { color: colors.muted }]}>
+                      {item.contact_phone || '—'}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
           ListEmptyComponent={
             <EmptyState label="No vendors yet" cta="Add Vendor" />
           }
         />
+      )}
+
+      {loading && (
+        <View style={tw`flex-1 items-center justify-center`}>
+          <ActivityIndicator size="large" color={colors.brand.primary} />
+        </View>
       )}
 
       {tab === 'Stops' && (

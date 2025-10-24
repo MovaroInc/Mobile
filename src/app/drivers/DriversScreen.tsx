@@ -189,23 +189,21 @@ export default function DriversScreen() {
     }
   }, [business?.id]);
 
-  const fetchInvites = useCallback(async () => {
+  const fetchInvites = async () => {
     if (!business?.id) return;
     setLoadingInvites(true);
     try {
       const all = (await getInviteByBusinessId(business.id)) ?? [];
-      const filtered =
-        inviteFilter === 'all'
-          ? all
-          : all.data.filter((i: Invite) => i.status === inviteFilter);
-      setInvites(filtered);
-      await emitInboxEvent(business.id);
+      console.log('all', all.data);
+      setInvites(all.data);
+      // await emitInboxEvent(business.id);
     } catch {
+      console.log('error');
       setInvites([]);
     } finally {
       setLoadingInvites(false);
     }
-  }, [business?.id, inviteFilter]);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -214,17 +212,17 @@ export default function DriversScreen() {
     }, []), // eslint-disable-line
   );
 
-  const onRefresh = useCallback(async () => {
+  const onRefresh = async () => {
     setRefreshing(true);
     await fetchDrivers();
     setRefreshing(false);
-  }, [fetchDrivers]);
+  };
 
-  const onRefreshInvites = useCallback(async () => {
+  const onRefreshInvites = async () => {
     setInviteRefreshing(true);
     await fetchInvites();
     setInviteRefreshing(false);
-  }, [fetchInvites]);
+  };
 
   /* ─────────────── merge driver base + live rows ─────────────── */
 
@@ -571,10 +569,10 @@ export default function DriversScreen() {
       </View>
 
       {/* Bottom controls (only for Drivers tab) */}
-      {tab === 'drivers' && (
-        <View
-          style={tw`absolute z-10 left-0 right-0 bottom-0 flex-row items-center justify-between p-4`}
-        >
+      <View
+        style={tw`absolute z-10 left-0 right-0 bottom-0 flex-row items-center justify-between p-4`}
+      >
+        {tab === 'drivers' ? (
           <View
             style={[
               tw`flex-row p-1 rounded-xl`,
@@ -596,20 +594,24 @@ export default function DriversScreen() {
               Icon={MapIcon}
             />
           </View>
+        ) : (
+          <View>
+            <Text></Text>
+          </View>
+        )}
 
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={[
-              tw`px-3 py-2 rounded-full flex-row items-center`,
-              { backgroundColor: colors.brand.primary },
-            ]}
-            onPress={onInvite}
-          >
-            <PlusCircle width={18} height={18} color="#fff" />
-            <Text style={tw`text-white ml-2 font-semibold`}>Add Driver</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={[
+            tw`px-3 py-2 rounded-full flex-row items-center`,
+            { backgroundColor: colors.brand.primary },
+          ]}
+          onPress={onInvite}
+        >
+          <PlusCircle width={18} height={18} color="#fff" />
+          <Text style={tw`text-white ml-2 font-semibold`}>Add Driver</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Search + Filters */}
       {tab === 'drivers' ? (
@@ -914,7 +916,7 @@ export default function DriversScreen() {
                     <Text
                       numberOfLines={1}
                       style={[
-                        tw`text-2xs mt-1.5 px-2 py-1 rounded-2 bg-white font-bold`,
+                        tw`text-xs mt-1.5 px-2 py-1 rounded-2 bg-white font-bold`,
                         { color: '#111' },
                       ]}
                     >
@@ -968,7 +970,7 @@ export default function DriversScreen() {
                       <Text
                         numberOfLines={1}
                         style={[
-                          tw`text-2xs mt-2 px-3 py-1 rounded-2 bg-white font-semibold`,
+                          tw`text-xs mt-2 px-3 py-1 rounded-2 bg-white font-semibold`,
                           { color: '#111' },
                         ]}
                       >
@@ -982,7 +984,7 @@ export default function DriversScreen() {
         ) : // INVITES TAB
         loadingInvites ? (
           <CenteredLoader colors={colors} text="Loading invites…" />
-        ) : filteredInvites.length === 0 ? (
+        ) : invites.length === 0 ? (
           <View style={tw`flex-1 items-center justify-center px-8`}>
             <Text style={[tw`text-lg font-semibold`, { color: colors.text }]}>
               No invites
@@ -1038,32 +1040,43 @@ export default function DriversScreen() {
                     {item.invited_phone ? ` • ${item.invited_phone}` : ''}
                   </Text>
 
-                  <Text style={[tw`text-2xs mt-1`, { color: colors.muted }]}>
+                  <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
                     Code: {item.reference_code || '—'} • Sent:{' '}
                     {item.sent_at
                       ? new Date(item.sent_at).toLocaleString()
                       : '—'}
                   </Text>
 
-                  <View style={tw`flex-row mt-2`}>
-                    <SmallBtn
-                      label="Resend"
-                      onPress={() => handleResend(item)}
-                      colors={colors}
-                    />
-                    <SmallBtn
-                      label="Revoke"
-                      onPress={() => handleRevoke(item)}
-                      colors={colors}
-                      danger
-                    />
-                    <SmallBtn
-                      label="Delete"
-                      onPress={() => handleDelete(item)}
-                      colors={colors}
-                      danger
-                    />
-                  </View>
+                  {item.status === 'pending' ? (
+                    <View style={tw`flex-row mt-2`}>
+                      <SmallBtn
+                        label="Resend"
+                        onPress={() => handleResend(item)}
+                        colors={colors}
+                      />
+                      <SmallBtn
+                        label="Revoke"
+                        onPress={() => handleRevoke(item)}
+                        colors={colors}
+                        danger
+                      />
+                      <SmallBtn
+                        label="Delete"
+                        onPress={() => handleDelete(item)}
+                        colors={colors}
+                        danger
+                      />
+                    </View>
+                  ) : item.status === 'accepted' ? (
+                    <View style={tw`flex-row mt-2`}>
+                      <Text style={[tw`text-sm`, { color: colors.text }]}>
+                        Accepted @{' '}
+                        {item.accepted_at
+                          ? new Date(item.accepted_at).toLocaleString()
+                          : '—'}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
               )}
             />
@@ -1153,39 +1166,29 @@ function EmptyListState({
           ? 'Try adjusting your search or filters.'
           : 'Invite your first driver to get started.'}
       </Text>
-
-      {!queryActive && (
-        <TouchableOpacity
-          onPress={onInvite}
-          activeOpacity={0.9}
-          style={[
-            tw`mt-4 px-4 py-2 rounded-xl`,
-            { backgroundColor: colors.brand?.primary || '#2563eb' },
-          ]}
-        >
-          <Text style={tw`text-white font-semibold`}>Add Driver</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
 
 function StatusPill({ status, colors }: { status: DriverStatus; colors: any }) {
-  const map: Record<DriverStatus, { text: string; bg: string }> = {
-    on_route: { text: 'On Route', bg: '#10B981' },
-    available: { text: 'Available', bg: '#3B82F6' },
-    off_duty: { text: 'Off Duty', bg: '#9CA3AF' },
-    pending: { text: 'Pending', bg: '#F59E0B' },
+  console.log('status', status);
+  const map = {
+    on_route: { text: 'en_route', bg: '#10B981' },
+    available: { text: 'available', bg: '#3B82F6' },
+    off_duty: { text: 'off_duty', bg: '#9CA3AF' },
+    pending: { text: 'pending', bg: '#F59E0B' },
   };
+  console.log('map', map);
+  console.log('map[status]', map[status]);
   return (
     <View
       style={[
         tw`px-2 py-0.5 rounded-full ml-2`,
-        { backgroundColor: map[status].bg },
+        { backgroundColor: map[status]?.bg },
       ]}
     >
-      <Text style={tw`text-white text-2xs font-semibold`}>
-        {map[status].text}
+      <Text style={tw`text-white text-xs font-semibold`}>
+        {map[status]?.text}
       </Text>
     </View>
   );
@@ -1211,11 +1214,11 @@ function StatusPillInvite({
     <View
       style={[
         tw`px-2 py-0.5 rounded-full`,
-        { backgroundColor: map[status].bg },
+        { backgroundColor: map[status]?.bg },
       ]}
     >
-      <Text style={tw`text-white text-2xs font-semibold`}>
-        {map[status].text}
+      <Text style={tw`text-white text-xs font-semibold`}>
+        {map[status]?.text}
       </Text>
     </View>
   );

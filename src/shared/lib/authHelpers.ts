@@ -180,24 +180,23 @@ export async function createCustomerAccount(
     error: any | null;
     message: string | null;
   }>('/customers/add-customer', {
-    businessId,
+    business_id: businessId,
     name,
     slug,
     phone,
     email,
-    contactName,
-    contactEmail,
-    contactPhone,
-    addressLine1,
-    addressLine2,
+    contact_name: contactName,
+    contact_email: contactEmail,
+    contact_phone: contactPhone,
+    address_line1: addressLine1,
+    address_line2: addressLine2,
     city,
-    state,
-    zip,
-    country,
+    region: state,
+    postal_code: zip,
+    country_code: country,
     latitude,
     longitude,
     location,
-    location_type,
     reference_number,
     special_requirements,
     tags,
@@ -214,7 +213,7 @@ export async function updateProfileAndBusiness(
   customer: any,
 ): Promise<{ success: boolean; data: any; error: any; message: string }> {
   console.log('updating profile and business', profile, business, employee);
-  const { success, data, error, message } = await api.post<{
+  const resp = await api.post<{
     success: boolean;
     data: any | null;
     error: any | null;
@@ -224,27 +223,32 @@ export async function updateProfileAndBusiness(
     employee_id: employee.id,
     id: profile.id,
   });
-  if (!success) {
-    return { success, data, error, message };
+  if (!resp.data.success) {
+    return {
+      success: false,
+      data: null,
+      error: resp.data.error,
+      message: resp.data.message,
+    };
   }
-  const {
-    success: success2,
-    data: data2,
-    error: error2,
-    message: message2,
-  } = await api.post<{
+
+  const resp2 = await api.post<{
     success: boolean;
     data: any | null;
     error: any | null;
     message: string | null;
-  }>('/business/update-business', {
+  }>(`/businesses/update-business/${business.id}`, {
     customer_id: customer.id,
-    id: business.id,
   });
-  if (!success2) {
-    return { success: success2, data: data2, error: error2, message: message2 };
+  if (!resp2.data.success) {
+    return {
+      success: false,
+      data: null,
+      error: resp2.data.error,
+      message: resp2.data.message,
+    };
   }
-  return { success: success2, data: data2, error: error2, message: message2 };
+  return { success: true, data: resp2.data.data, error: null, message: null };
 }
 
 const attemptLogin = async (username: string, password: string) => {

@@ -10,12 +10,13 @@ import {
   Platform,
   ScrollView,
   FlatList,
+  Switch,
 } from 'react-native';
 import tw from 'twrnc';
 import { useSession } from '../../state/useSession';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { api } from '../../shared/lib/api'; // <- your axios/fetch wrapper
-import { ChevronLeft } from 'react-native-feather';
+import { Check, ChevronLeft } from 'react-native-feather';
 import { useTheme } from '../../shared/hooks/useTheme';
 import axios from 'axios';
 import {
@@ -57,6 +58,7 @@ export default function AddPartyScreen() {
   const [email, setEmail] = useState('');
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [samePhone, setSamePhone] = useState(true);
   const [contactEmail, setContactEmail] = useState('');
 
   const [address, setAddress] = useState('');
@@ -80,7 +82,7 @@ export default function AddPartyScreen() {
       name.trim().length > 1 &&
       isE164(phone) &&
       contactName.trim().length > 1 &&
-      isE164(contactPhone) &&
+      contactPhone &&
       line1.trim().length > 3 &&
       city.trim().length > 1 &&
       region.trim().length > 1 &&
@@ -107,6 +109,14 @@ export default function AddPartyScreen() {
     }
     getPlaceCoordinates(address);
   }, [address]);
+
+  useEffect(() => {
+    if (samePhone) {
+      setContactPhone(normalizePhone(phone));
+    } else {
+      setContactPhone('');
+    }
+  }, [samePhone, phone]);
 
   const handleSearchAddress = async (text: string) => {
     setQuery(text);
@@ -170,7 +180,9 @@ export default function AddPartyScreen() {
         phone: normalizePhone(phone),
         email: email || null,
         contact_name: contactName.trim(),
-        contact_phone: normalizePhone(contactPhone),
+        contact_phone: samePhone
+          ? normalizePhone(phone)
+          : normalizePhone(contactPhone),
         address_line1: line1.trim(),
         address_line2: line2 || null,
         city: city.trim(),
@@ -259,23 +271,39 @@ export default function AddPartyScreen() {
           colors={colors}
           required={true}
         />
-        <Field
-          label="Contact Phone"
-          value={contactPhone}
-          onChangeText={v => setContactPhone(normalizePhone(v))}
-          placeholder="555 987 6543"
-          colors={colors}
-          keyboardType="phone-pad"
-          required={true}
-        />
-        <Field
-          label="Contact Email"
-          value={contactEmail}
-          onChangeText={setContactEmail}
-          colors={colors}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
+        <Text style={tw`text-gray-400 text-xs mb-1`}>
+          Contact Phone <Text style={tw`text-red-500`}>*</Text>
+        </Text>
+        <Row
+          style={[
+            tw`items-center mb-2`,
+            {
+              backgroundColor: colors.border,
+            },
+          ]}
+        >
+          <Check width={16} height={16} color="#9CA3AF" />
+          <Text style={[tw`ml-2 flex-1`, { color: colors.text }]}>
+            Contact Phone same as Business Phone
+          </Text>
+          <View style={tw``} />
+          <Switch
+            value={samePhone}
+            onValueChange={setSamePhone}
+            thumbColor={samePhone ? colors.primary : '#666'}
+          />
+        </Row>
+        {samePhone ? null : (
+          <Field
+            label="Contact Phone"
+            value={contactPhone}
+            onChangeText={v => setContactPhone(normalizePhone(v))}
+            placeholder="555 987 6543"
+            colors={colors}
+            keyboardType="phone-pad"
+            required={true}
+          />
+        )}
 
         <SectionTitle text="Address" />
         <FieldSuggestions
@@ -330,9 +358,6 @@ function SectionTitle({ text }: { text: string }) {
     </Text>
   );
 }
-function Row({ children }: { children: React.ReactNode }) {
-  return <View style={tw`flex-row`}>{children}</View>;
-}
 function Spacer() {
   return <View style={tw`w-2`} />;
 }
@@ -352,5 +377,11 @@ function Field(props: any) {
         ]}
       />
     </View>
+  );
+}
+
+function Row({ children, style }: { children: React.ReactNode; style?: any }) {
+  return (
+    <View style={[tw`flex-row py-3 px-3 rounded-xl`, style]}>{children}</View>
   );
 }
