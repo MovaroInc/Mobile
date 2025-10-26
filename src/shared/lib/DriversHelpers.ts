@@ -9,3 +9,13 @@ export const getDrivers = async (businessId: number) => {
   }>(`/employees/get-employee-by-business-id/${businessId}`);
   return res.data;
 };
+
+export const grabEmployeeById = async (employeeId: number) => {
+  const res = await api.get<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/employees/get-employee-by-id/${employeeId}`);
+  return res.data;
+};

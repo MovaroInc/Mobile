@@ -187,42 +187,44 @@ export default function RouteScreen() {
   // Load drivers + routes when business/date changes
   useFocusEffect(
     useCallback(() => {
-      if (!business?.id) return;
-      (async () => {
-        setLoading(true);
-        try {
-          // drivers
-          const drvRes = await getDrivers(business.id);
-          setDrivers(drvRes?.data);
-
-          // routes (normalize shapes + dates)
-          console.log('onRefresh', business.id, selectedDate);
-          const rRes = await getRoutesByBusinessId(business.id, selectedDate);
-          console.log('rRes', rRes);
-          if (rRes.error) {
-            throw new Error('Failed to fetch routes: ' + rRes.error.message);
-          }
-          const rResDraft = await getDraftRoutesByBusinessId(
-            business.id,
-            selectedDate,
-          );
-          console.log('rResDraft', rResDraft);
-          if (rResDraft.error) {
-            throw new Error(
-              'Failed to fetch draft routes: ' + rResDraft.error.message,
-            );
-          }
-          setRoutes(rRes.data);
-          setDraftRoutes(rResDraft.data);
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.warn('Failed loading routes/drivers', e);
-        } finally {
-          setLoading(false);
-        }
-      })();
-    }, [business?.id, selectedDate]),
+      fetchRoutes();
+    }, []), // eslint-disable-line
   );
+
+  const fetchRoutes = async () => {
+    if (!business?.id) return;
+    setLoading(true);
+    try {
+      // drivers
+      const drvRes = await getDrivers(business.id);
+      setDrivers(drvRes?.data);
+
+      // routes (normalize shapes + dates)
+      console.log('onRefresh', business.id, selectedDate);
+      const rRes = await getRoutesByBusinessId(business.id, selectedDate);
+      console.log('rRes', rRes);
+      if (rRes.error) {
+        throw new Error('Failed to fetch routes: ' + rRes.error.message);
+      }
+      const rResDraft = await getDraftRoutesByBusinessId(
+        business.id,
+        selectedDate,
+      );
+      console.log('rResDraft', rResDraft);
+      if (rResDraft.error) {
+        throw new Error(
+          'Failed to fetch draft routes: ' + rResDraft.error.message,
+        );
+      }
+      setRoutes(rRes.data);
+      setDraftRoutes(rResDraft.data);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed loading routes/drivers', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useLayoutEffect(() => {
     if (!profile?.id) return;
@@ -247,28 +249,9 @@ export default function RouteScreen() {
   }, [profile?.id]);
 
   const onRefresh = async () => {
-    if (!business?.id) return;
     setRefreshing(true);
-    try {
-      console.log('onRefresh', business.id, selectedDate);
-      const rRes = await getRoutesByBusinessId(business.id, selectedDate);
-      if (rRes.error) {
-        throw new Error('Failed to fetch routes: ' + rRes.error.message);
-      }
-      const rResDraft = await getDraftRoutesByBusinessId(
-        business.id,
-        selectedIso,
-      );
-      if (rResDraft.error) {
-        throw new Error(
-          'Failed to fetch draft routes: ' + rResDraft.error.message,
-        );
-      }
-      setRoutes(rRes.data);
-      setDraftRoutes(rResDraft.data);
-    } finally {
-      setRefreshing(false);
-    }
+    fetchRoutes();
+    setRefreshing(false);
   };
 
   const confirmDeleteRoute = async (routeId: number) => {
@@ -282,7 +265,7 @@ export default function RouteScreen() {
           const response = await deleteRoute(routeId);
           console.log('deleteRoute response', response);
           if (response.success) {
-            onRefresh();
+            fetchRoutes();
           } else {
             Alert.alert('Error', response.error.message);
           }
@@ -563,18 +546,16 @@ export default function RouteScreen() {
               <Text
                 style={[tw`text-xl mb-2 font-semibold`, { color: colors.text }]}
               >
-                Unassigned Routes
+                Drafted Routes
               </Text>
               {draftRoutes.map(r => {
+                console.log('r', JSON.stringify(r, null, 2));
                 const stopsCount = r.stops?.length ?? 0;
                 const durationMin =
                   (r.stops ?? []).reduce(
                     (sum, s) => sum + (s.planned_service_minutes ?? 10),
                     0,
                   ) || stopsCount * 10;
-                const driverName =
-                  drivers.find(d => d.id === r.employee_id)?.name ??
-                  'Unassigned';
                 const startHM = r.planned_start_at
                   ? new Date(r.planned_start_at).toLocaleTimeString([], {
                       hour: '2-digit',
@@ -636,7 +617,7 @@ export default function RouteScreen() {
                         style={tw`text-gray-400 text-xs ml-1`}
                         numberOfLines={1}
                       >
-                        {driverName}
+                        {r.driver?.first_name} {r.driver?.last_name}
                       </Text>
                       <View style={tw`w-3`} />
                       <Navigation width={14} height={14} color="#9CA3AF" />
@@ -646,8 +627,7 @@ export default function RouteScreen() {
                       <View style={tw`w-3`} />
                       <Clock width={14} height={14} color="#9CA3AF" />
                       <Text style={tw`text-gray-400 text-xs ml-1`}>
-                        {toHM(durationMin)}
-                        {startHM ? ` • ${startHM}` : ''}
+                        {startHM ? `• ${startHM}` : ''}
                       </Text>
                     </View>
                   </TouchableOpacity>

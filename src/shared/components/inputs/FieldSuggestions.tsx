@@ -20,7 +20,7 @@ export default function FieldSuggestions(props: any) {
     <View style={[flex ? tailwind`flex-1` : undefined, tailwind`mb-3`]}>
       <Text style={tailwind`text-gray-400 text-xs mb-1`}>
         {label}
-        {required && <Text style={tailwind`text-red-500`}>*</Text>}
+        {required && <Text style={tailwind`text-red-500`}> *</Text>}
       </Text>
       <View
         style={[

@@ -304,7 +304,7 @@ export default function CreateRouteStep1Screen() {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+    return `${y}-${day}-${m}`;
   }
 
   const onNext = async () => {
@@ -347,9 +347,11 @@ export default function CreateRouteStep1Screen() {
         const payload = {
           route_id: draft.data.id,
           business_id: business.id,
-          stop_type: 'baae', // backend can treat as Base/HQ type
+          stop_type: 'base', // backend can treat as Base/HQ type
           depot_role: 'start', // optional: mark as return-to-base
-          customer_id: null,
+          customer_id: business.customer_id ?? null,
+          driver_id: selectedDriver?.Profile?.id ?? null,
+          employee_id: selectedDriver?.id ?? null,
           vendor_id: null,
           address_line1: business.address_line1 ?? '',
           address_line2: business.address_line2 ?? null,
@@ -360,10 +362,12 @@ export default function CreateRouteStep1Screen() {
           latitude: business.latitude ?? null,
           longitude: business.longitude ?? null,
           status: 'scheduled',
-          contact_name: business.name ?? 'Base',
-          contact_phone: business.phone ?? '',
-          contact_email: business.email ?? '',
-          business_name: 'Base',
+          contact_name:
+            `${selectedDriver?.Profile?.first_name} ${selectedDriver?.Profile?.last_name}` ??
+            'Unknown Driver',
+          contact_phone: selectedDriver?.Profile?.phone ?? '',
+          contact_email: selectedDriver?.Profile?.email ?? '',
+          business_name: business.name ?? 'Unknown Business',
           sequence: 1, // append
           is_lunch: false,
           expected_duration: 60,
@@ -484,7 +488,7 @@ export default function CreateRouteStep1Screen() {
             <Row style={tw`items-center mb-2`}>
               <MapPin width={16} height={16} color="#9CA3AF" />
               <Text style={[tw`ml-2`, { color: colors.text }]}>
-                Optimize Route with Gemeni AI
+                Auto Optimize Route with Gemeni AI
               </Text>
               <View style={tw`flex-1`} />
               <Switch
@@ -526,7 +530,7 @@ export default function CreateRouteStep1Screen() {
                 <GitPullRequest width={16} height={16} color="#9CA3AF" />
                 <View style={tw`ml-2`}>
                   <Text style={[tw``, { color: colors.text }]}>
-                    Driver Route Display
+                    Display Entire Route
                   </Text>
                   {driverDisplay === 'full' ? (
                     <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
@@ -575,9 +579,9 @@ export default function CreateRouteStep1Screen() {
             />
 
             {/* Starting location */}
-
+            <SectionTitle text="Route Notes (optional)" />
             {/* Tags & Notes */}
-            <SectionTitle text="Tags & Notes (optional)" />
+            {/* <SectionTitle text="Tags & Notes (optional)" />
             <Field
               label="Tags (comma-separated)"
               value={tagsInput}
@@ -585,7 +589,7 @@ export default function CreateRouteStep1Screen() {
               placeholder="priority, westside, morning"
               colors={colors}
               leftIcon={<Tag width={16} height={16} color="#9CA3AF" />}
-            />
+            /> */}
             <Text style={tw`text-gray-400 text-xs mb-1`}>Notes</Text>
             <TextInput
               value={notes}

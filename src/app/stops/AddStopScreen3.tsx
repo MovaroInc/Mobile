@@ -1,5 +1,5 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -62,6 +62,23 @@ const AddStopScreen3 = () => {
     'invoice',
   );
 
+  useLayoutEffect(() => {
+    (async () => {
+      const step1PayloadStored = await AsyncStorage.getItem('step1Payload');
+      console.log('step1PayloadStored', step1PayloadStored);
+      const oneTimeIdStored = await AsyncStorage.getItem('oneTimeId');
+      console.log('oneTimeIdStored', oneTimeIdStored);
+      const selectedUseStored = await AsyncStorage.getItem('selectedUse');
+      console.log('selectedUseStored', selectedUseStored);
+      const step1OneTimePayloadStored = await AsyncStorage.getItem(
+        'step1OneTimePayload',
+      );
+      console.log('step1OneTimePayloadStored', step1OneTimePayloadStored);
+      const step2PayloadStored = await AsyncStorage.getItem('step2Payload');
+      console.log('step2PayloadStored', step2PayloadStored);
+    })();
+  }, []);
+
   const openSelectedPicker = (category: 'invoice' | 'other', index: number) => {
     setSelectedCategory(category);
     setSelectedIndex(index);
@@ -114,22 +131,29 @@ const AddStopScreen3 = () => {
 
   const ImageSelector = async (source: 'camera' | 'gallery') => {
     if (!selectedCategory) return;
-
     try {
       const asset =
         source === 'camera'
           ? await takePhotoWithCamera()
           : await pickImageFromGallery();
-      console.log('asset', asset);
-      console.log('selectedIndex', selectedIndex);
-      const url = await uploadImageToStorage(asset.uri, asset.fileName);
+
+      // 1. Close the image picker modal
+      setShowImageTypePicker(false);
+
+      // Early exit if no asset was picked/captured (e.g., user cancelled)
+      if (!asset || !asset.uri) {
+        return;
+      }
+
+      // 2. Set loading state to true for the selected tile
       if (selectedCategory === 'invoice') {
         setInvoiceImages(prev => {
           const newImages = [...prev];
           newImages[selectedIndex] = {
             ...newImages[selectedIndex],
-            file: asset,
-            public_url: url,
+            file: asset, // Update with the local file info
+            loading: true, // Set loading to true
+            public_url: null, // Clear public_url while uploading
           };
           return newImages;
         });
@@ -138,15 +162,59 @@ const AddStopScreen3 = () => {
           const newImages = [...prev];
           newImages[selectedIndex] = {
             ...newImages[selectedIndex],
-            file: asset,
-            public_url: url,
+            file: asset, // Update with the local file info
+            loading: true, // Set loading to true
+            public_url: null, // Clear public_url while uploading
           };
           return newImages;
         });
       }
-      setShowImageTypePicker(false);
+
+      // 3. Start the upload process
+      const url = await uploadImageToStorage(asset.uri, asset.fileName);
+
+      // 4. Update the state again with the public_url and set loading to false
+      if (selectedCategory === 'invoice') {
+        setInvoiceImages(prev => {
+          const newImages = [...prev];
+          newImages[selectedIndex] = {
+            ...newImages[selectedIndex],
+            public_url: url, // Set the public URL
+            loading: false, // Set loading to false
+          };
+          return newImages;
+        });
+      } else {
+        setOtherImages(prev => {
+          const newImages = [...prev];
+          newImages[selectedIndex] = {
+            ...newImages[selectedIndex],
+            public_url: url, // Set the public URL
+            loading: false, // Set loading to false
+          };
+          return newImages;
+        });
+      }
     } catch (e) {
       console.error('Error picking image:', e);
+      // Optional: Reset loading state on error
+      if (selectedCategory === 'invoice') {
+        setInvoiceImages(prev => {
+          const newImages = [...prev];
+          if (newImages[selectedIndex]) {
+            newImages[selectedIndex].loading = false;
+          }
+          return newImages;
+        });
+      } else {
+        setOtherImages(prev => {
+          const newImages = [...prev];
+          if (newImages[selectedIndex]) {
+            newImages[selectedIndex].loading = false;
+          }
+          return newImages;
+        });
+      }
     }
   };
 
@@ -156,10 +224,15 @@ const AddStopScreen3 = () => {
   }, [invoiceImages, otherImages]);
 
   const handleSubmit = async () => {
+    setLoading(true);
     const stored1Payload = await AsyncStorage.getItem('step1Payload');
     const payload1 = JSON.parse(stored1Payload || '{}');
     const stored2Payload = await AsyncStorage.getItem('step2Payload');
     const payload2 = JSON.parse(stored2Payload || '{}');
+    const storedOneTimeId = await AsyncStorage.getItem('oneTimeId');
+    const oneTimeId = storedOneTimeId ? Number(storedOneTimeId) : null;
+    const storedSelectedUse = await AsyncStorage.getItem('selectedUse');
+
     const reqPayloads = {
       route_id: routeId,
       business_id: business?.id,
@@ -181,6 +254,7 @@ const AddStopScreen3 = () => {
       contact_email: payload1.contact_email,
       business_name: payload1.business_name,
       sequence: stopsCount + 1,
+      one_time_id: storedSelectedUse === 'one_time' ? oneTimeId : null,
     };
     const resStop = await createStop(reqPayloads);
     console.log('resStop', resStop.data);
@@ -270,6 +344,10 @@ const AddStopScreen3 = () => {
     }
     await AsyncStorage.removeItem('step1Payload');
     await AsyncStorage.removeItem('step2Payload');
+    await AsyncStorage.removeItem('oneTimeId');
+    await AsyncStorage.removeItem('selectedUse');
+    await AsyncStorage.removeItem('step1OneTimePayload');
+    setLoading(false);
     nav.pop(3);
   };
 
@@ -372,11 +450,11 @@ const AddStopScreen3 = () => {
           { backgroundColor: colors.brand?.primary || '#2563eb' },
         ]}
       >
-        <Text
-          style={[tailwind`text-white font-semibold`, { color: colors.text }]}
-        >
-          Done
-        </Text>
+        {loading ? (
+          <ActivityIndicator size="small" color={'white'} />
+        ) : (
+          <Text style={[tailwind`text-white font-semibold`]}>Create Stop</Text>
+        )}
       </TouchableOpacity>
     </View>
   );

@@ -10,6 +10,19 @@ export const createDraftRoute = async (payload: any) => {
   return res.data;
 };
 
+export const updateDraftRoute = async (payload: any, routeId: number) => {
+  console.log('updateDraftRoute payload', payload);
+  console.log('updateDraftRoute routeId', routeId);
+  const res = await api.put<{
+    success: boolean;
+    data: any | null;
+    error: any | null;
+    message: string | null;
+  }>(`/routes/update-route/${routeId}`, payload);
+  console.log('updateDraftRoute res', res);
+  return res.data;
+};
+
 export const getRoutesByBusinessId = async (
   businessId: number,
   selectedDate: string,

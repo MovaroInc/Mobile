@@ -81,11 +81,17 @@ function toHHmm(d: Date) {
 export default function AddStopScreen2() {
   const nav = useNavigation<any>();
   const { colors } = useTheme();
-  const { business } = useSession();
   const { params } = useRoute<any>();
-  const { routeId, step1, stopId, stopsCount = 0 } = params as RouteParams;
+  const { routeId, stopsCount = 0 } = params as RouteParams;
   console.log('stopsCount', stopsCount);
   console.log('routeId', routeId);
+
+  const getStep1Payload = async () => {
+    const step1Payload = await AsyncStorage.getItem('step1Payload');
+    console.log('step1Payload', step1Payload);
+    return JSON.parse(step1Payload || '{}');
+  };
+  console.log('step1Payload', getStep1Payload());
 
   /** ── Position (sequence) ───────────────────────────────────── */
   // Position choices: 'start' | 'end' | 'after'
@@ -319,47 +325,6 @@ export default function AddStopScreen2() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={tw`px-4 pb-28`}
       >
-        {/* Position */}
-        <Text style={[tw`text-lg font-semibold mb-2`, { color: colors.text }]}>
-          Position
-        </Text>
-        <View style={tw`flex-row mb-2`}>
-          <ToggleChip
-            active={positionMode === 'start'}
-            onPress={() => setPositionMode('start')}
-            label="Start"
-            colors={colors}
-          />
-          <View style={tw`w-2`} />
-          <ToggleChip
-            active={positionMode === 'end'}
-            onPress={() => setPositionMode('end')}
-            label="End"
-            colors={colors}
-          />
-        </View>
-
-        {positionMode === 'after' && (
-          <View style={tw`flex-row items-center mb-2`}>
-            <Hash width={16} height={16} color={colors.muted} />
-            <TextInput
-              value={afterIndex}
-              onChangeText={setAfterIndex}
-              keyboardType="number-pad"
-              placeholder="1"
-              placeholderTextColor={'#9CA3AF'}
-              style={[
-                tw`ml-2 flex-1 px-3 py-2 rounded-xl`,
-                { backgroundColor: colors.border, color: colors.text },
-              ]}
-            />
-          </View>
-        )}
-        <Text style={[tw`text-2xs mb-3`, { color: colors.muted }]}>
-          {sequenceHint}
-        </Text>
-
-        {/* Schedule */}
         <Text style={[tw`text-lg font-semibold mb-2`, { color: colors.text }]}>
           Schedule
         </Text>
@@ -409,7 +374,6 @@ export default function AddStopScreen2() {
             </View>
           </View>
         )}
-
         <Text style={tw`text-gray-400 text-xs mb-1 mt-3`}>
           Expected Service Time (min)
         </Text>
@@ -428,13 +392,11 @@ export default function AddStopScreen2() {
             style={[tw`flex-1`, { color: colors.text, padding: 0 }]}
           />
         </View>
-
         <Text
           style={[tw`text-lg font-semibold mb-2 mt-4`, { color: colors.text }]}
         >
           Requirements
         </Text>
-
         <ReqRow
           Icon={FileText}
           label="Give Invoice"
@@ -459,7 +421,6 @@ export default function AddStopScreen2() {
           colors={colors}
           description="Require signature from recipient."
         />
-
         <ReqRow
           Icon={ListIcon}
           label="Photos Required"
@@ -476,13 +437,11 @@ export default function AddStopScreen2() {
           colors={colors}
           description="Complete the item checklist."
         />
-
         <Text
           style={[tw`text-lg font-semibold mt-4 mb-2`, { color: colors.text }]}
         >
           Pre-Arrival Requirements
         </Text>
-
         <ReqRow
           Icon={Check}
           label="Contact Before"
@@ -491,7 +450,6 @@ export default function AddStopScreen2() {
           colors={colors}
           description="Contact recipient before arrival."
         />
-
         <ReqRow
           Icon={Clipboard}
           label="Contactless"
@@ -540,7 +498,6 @@ export default function AddStopScreen2() {
           colors={colors}
           description="Maintain required temperature range."
         />
-
         <Text style={tw`text-gray-400 text-xs mb-1 mt-2`}>Access Code</Text>
         <View
           style={[tw`px-3 py-2 rounded-xl`, { backgroundColor: colors.border }]}
@@ -553,7 +510,6 @@ export default function AddStopScreen2() {
             style={[{ color: colors.text, padding: 0 }]}
           />
         </View>
-
         <Text style={tw`text-gray-400 text-xs mb-1 mt-2`}>Access Info</Text>
         <View
           style={[tw`px-3 py-2 rounded-xl`, { backgroundColor: colors.border }]}
@@ -566,7 +522,6 @@ export default function AddStopScreen2() {
             style={[{ color: colors.text, padding: 0 }]}
           />
         </View>
-
         <Text style={tw`text-gray-400 text-xs mb-1 mt-2`}>Overall Notes</Text>
         <View
           style={[
@@ -582,15 +537,12 @@ export default function AddStopScreen2() {
             style={[{ color: colors.text, padding: 0 }]}
           />
         </View>
-
         {/* Requirements */}
-
         <Text
           style={[tw`text-lg font-semibold mt-4 mb-2`, { color: colors.text }]}
         >
           Payment
         </Text>
-
         {/* Payment */}
         <ReqRow
           Icon={DollarSign}
@@ -600,7 +552,6 @@ export default function AddStopScreen2() {
           colors={colors}
           description="Require payment transaction."
         />
-
         {paymentExpected && (
           <>
             <Text style={tw`text-gray-400 text-xs mb-1`}>Invoice Amount</Text>
@@ -690,7 +641,6 @@ export default function AddStopScreen2() {
             </View>
           </>
         )}
-
         {/* Next CTA */}
         <TouchableOpacity
           disabled={!canContinue}

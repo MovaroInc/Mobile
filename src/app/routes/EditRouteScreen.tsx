@@ -1,4 +1,4 @@
-// src/app/routes/EditRouteScreen.tsx
+// src/app/routes/CreateRouteStep1Screen.tsx
 import React, { useMemo, useState, useEffect, useLayoutEffect } from 'react';
 import {
   View,
@@ -21,8 +21,8 @@ import {
   ChevronLeft,
   Tag,
   MapPin,
+  Clock,
   X as CloseIcon,
-  Map,
   GitPullRequest,
   Check,
 } from 'react-native-feather';
@@ -37,13 +37,21 @@ import Field from '../../shared/components/inputs/Field';
 import SelectInput from '../../shared/components/inputs/SelectInput';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
 import DriverPickerModal from '../../shared/components/modals/DriverPickerModal';
-import { createDraftRoute, updateRouter } from '../../shared/lib/RouteHelpers';
+import {
+  createDraftRoute,
+  grabRouteCount,
+  updateDraftRoute,
+} from '../../shared/lib/RouteHelpers';
 import { CreateInbox } from '../../shared/lib/inboxHelpers';
+import { createStop } from '../../shared/lib/StopsHelpers';
 
-/* ───────────────── types ───────────────── */
+type RouteParams = Partial<{
+  driverId: number | null;
+  serviceDateISO: string | null;
+}>;
 
 type Employee = {
-  id: number; // employee id
+  id: number;
   is_driver?: boolean | null;
   work_email?: string | null;
   phone?: string | null;
@@ -55,33 +63,33 @@ type Employee = {
   } | null;
 };
 
-type RouteRecord = {
-  id: number;
-  business_id: number;
-  employee_id: number | null; // employee id
-  driver_id: number | null; // profile id
-  name: string;
-  service_date: string; // YYYY-MM-DD
-  status: string;
-  planned_start_at: string | null; // ISO
-  start_longitude: number | null;
-  start_latitude: number | null;
-  notes: string | null;
-  tags: string[] | null;
-  single_day?: boolean | null;
-  optimize?: boolean | null;
-  profile?: { id?: number | null } | null;
+export function combineISODateAndTimeUTC(isoDate: string, timeStr: string) {
+  // isoDate: "YYYY-MM-DD" (local calendar)
+  // timeStr: "HH:mm" or "h:mm AM/PM" (may contain narrow/nbsp)
+  const safe = (timeStr || '')
+    .replace(/\u202F|\u00A0/g, ' ')
+    .trim()
+    .toUpperCase();
 
-  // Optional text address fields (hydrate if you store them)
-  address_line1?: string | null;
-  address_line2?: string | null;
-  city?: string | null;
-  region?: string | null;
-  postal_code?: string | null;
-  country?: string | null;
-};
+  // Try 12-hour first: "h:mm AM/PM"
+  let h: number, m: number;
+  let m12 = safe.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (m12) {
+    h = parseInt(m12[1], 10) % 12;
+    if (m12[3] === 'PM') h += 12; // 12h -> 24h
+    m = parseInt(m12[2], 10);
+  } else {
+    // Fallback 24-hour: "HH:mm"
+    const m24 = safe.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m24) throw new Error(`Invalid time: ${timeStr}`);
+    h = parseInt(m24[1], 10);
+    m = parseInt(m24[2], 10);
+  }
 
-/* ─────────────── helpers ─────────────── */
+  const [y, mo, d] = isoDate.split('-').map(Number); // local calendar
+  const local = new Date(y, (mo ?? 1) - 1, d ?? 1, h, m, 0, 0); // constructs in local TZ (handles DST)
+  return local.toISOString(); // UTC ISO (timestamptz-friendly)
+}
 
 function toHHmm(d: Date) {
   const h = `${d.getHours()}`.padStart(2, '0');
@@ -89,98 +97,65 @@ function toHHmm(d: Date) {
   return `${h}:${m}`;
 }
 
-// ISO (UTC) → HH:mm in device local time (for the picker)
-function isoToLocalHHmm(iso?: string | null) {
-  if (!iso) return '08:00';
-  const d = new Date(iso);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+export function localYYYYMMDD(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
-
-// Combine local YYYY-MM-DD + HH:mm → UTC ISO string
-export function combineISODateAndTimeUTC(isoDate: string, timeHHmm: string) {
-  const [y, mo, d] = isoDate.split('-').map(Number);
-  const [h = 0, m = 0] = timeHHmm.split(':').map(Number);
-  const local = new Date(y, (mo ?? 1) - 1, d ?? 1, h, m, 0, 0);
-  return local.toISOString();
-}
-
-/* ─────────────── screen ─────────────── */
 
 export default function EditRouteScreen() {
   const { colors } = useTheme();
   const nav = useNavigation<any>();
   const { params } = useRoute<any>();
-  const initialRoute: RouteRecord | undefined = params?.route; // pass as { route }
-
   const { business, profile } = useSession();
-
+  const { route } = params as RouteParams;
   const items = buildDateRange(8); // today + next 7
   const initialISO =
-    initialRoute?.service_date ??
-    params?.serviceDateISO ??
+    (params as RouteParams)?.serviceDateISO ??
     (items[0]?.iso || new Date().toISOString().slice(0, 10));
 
-  // Basics
-  const [name, setName] = useState<string | null>(
-    initialRoute?.name ?? 'New Route',
-  );
+  const [name, setName] = useState<string | null>(route.name);
   const [selectedIso] = useState(initialISO);
 
   // Time picker
   const [plannedStart, setPlannedStart] = useState(
-    isoToLocalHHmm(initialRoute?.planned_start_at),
+    new Date(route.planned_start_at).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit', // no seconds
+      hour12: true, // or false for 24h
+    }),
   ); // HH:mm
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Drivers
   const [allDrivers, setAllDrivers] = useState<Employee[]>([]);
-  const [selectedDriver, setSelectedDriver] = useState<Employee | null>(null);
+  const [selectedDriver, setSelectedDriver] = useState<Employee | null>(
+    route.driver,
+  );
   const [driverModalOpen, setDriverModalOpen] = useState(false);
 
-  // Depot/Base
-  const hasCustomStart =
-    typeof initialRoute?.start_latitude === 'number' ||
-    typeof initialRoute?.start_longitude === 'number';
-  const [useBusinessHQ, setUseBusinessHQ] = useState(!hasCustomStart);
-  const [line1, setLine1] = useState(initialRoute?.address_line1 ?? '');
-  const [line2, setLine2] = useState(initialRoute?.address_line2 ?? '');
-  const [city, setCity] = useState(initialRoute?.city ?? '');
-  const [region, setRegion] = useState(initialRoute?.region ?? '');
-  const [postal, setPostal] = useState(initialRoute?.postal_code ?? '');
-  const [country, setCountry] = useState(initialRoute?.country ?? 'US');
-
-  // Tags & Notes
-  const [tagsInput, setTagsInput] = useState(
-    Array.isArray(initialRoute?.tags) ? initialRoute!.tags!.join(', ') : '',
-  );
-  const [notes, setNotes] = useState(initialRoute?.notes ?? '');
+  const [tagsInput, setTagsInput] = useState('');
+  const [notes, setNotes] = useState(route.notes);
 
   // Address search
-  const [address, setAddress] = useState<string>('');
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [query, setQuery] = useState('');
-  const [latitude, setLatitude] = useState(initialRoute?.start_latitude || 0);
-  const [longitude, setLongitude] = useState(
-    initialRoute?.start_longitude || 0,
-  );
+  const [latitude, setLatitude] = useState(route.start_latitude);
+  const [longitude, setLongitude] = useState(route.start_longitude);
+  const [singleDay, setSingleDay] = useState(true);
+  const [routeOptimize, setRouteOptimize] = useState(route.optimize);
 
-  // Flags
-  const [singleDay, setSingleDay] = useState(initialRoute?.single_day ?? true);
-  const [routeOptimize, setRouteOptimize] = useState(
-    initialRoute?.optimize ?? true,
+  const [driverDisplay, setDriverDisplay] = useState('full');
+  const [autoTriggerStops, setAutoTriggerStops] = useState(
+    route.auto_trigger_stops,
   );
-
-  const [driverDisplay, setDriverDisplay] = useState(
-    initialRoute?.driver_display ?? 'full',
-  );
-
-  const [autoTriggerStops, setAutoTriggerStops] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
-  /* ─────────────── data ─────────────── */
+  const [endBase, setEndBase] = useState(route.end_base);
+  const [startBase, setStartBase] = useState(route.start_base);
+  const [breaksAmount, setBreaksAmount] = useState(
+    route.allowed_breaks.toString(),
+  );
 
   useLayoutEffect(() => {
     if (!business?.id) return;
@@ -190,38 +165,17 @@ export default function EditRouteScreen() {
     })();
   }, [business?.id]);
 
-  // Preselect driver from the route record if present
+  // Preselect driver when params or driver list changes
   useEffect(() => {
     if (!allDrivers.length) return;
-
-    // Prefer by employee_id (routes table uses employee ids)
-    if (initialRoute?.employee_id) {
-      const match =
-        allDrivers.find(x => x.id === initialRoute.employee_id) || null;
-      if (match) {
-        setSelectedDriver(match);
-        return;
-      }
-    }
-
-    // Fallback: match by profile id (route.profile.id)
-    if (initialRoute?.profile?.id) {
-      const match =
-        allDrivers.find(x => x.Profile?.id === initialRoute.profile!.id) ||
-        null;
-      if (match) {
-        setSelectedDriver(match);
-        return;
-      }
-    }
-
-    // Else default: first available
-    if (!selectedDriver) {
+    const fromParams = (params as RouteParams)?.driverId;
+    if (fromParams != null) {
+      const d = allDrivers.find(x => x.id === fromParams) || null;
+      setSelectedDriver(d);
+    } else if (!selectedDriver) {
       setSelectedDriver(allDrivers[0] ?? null);
     }
-  }, [allDrivers, initialRoute?.employee_id, initialRoute?.profile?.id]);
-
-  /* ─────────────── derived ─────────────── */
+  }, [params, allDrivers, selectedDriver]);
 
   const headerTitle = useMemo(() => {
     const d = new Date(selectedIso);
@@ -233,176 +187,48 @@ export default function EditRouteScreen() {
     });
     return isToday ? `Today — ${label}` : label;
   }, [selectedIso]);
-
-  const selectedDriverLabel = useMemo(() => {
-    if (!selectedDriver) return 'Select';
-    const fn = selectedDriver.Profile?.first_name?.trim() ?? '';
-    const ln = selectedDriver.Profile?.last_name?.trim() ?? '';
-    const full = `${fn} ${ln}`.trim();
-    return (
-      full ||
-      selectedDriver.work_email ||
-      selectedDriver.Profile?.email ||
-      'Select'
-    );
-  }, [selectedDriver]);
-
+  const normalizeTime = (s: string) => s?.replace(/\u202F|\u00A0/g, ' ').trim();
   const valid = useMemo(() => {
+    const t = normalizeTime(plannedStart || '');
     if (!name?.trim()) return false;
     if (!selectedIso) return false;
     if (!selectedDriver?.id) return false;
-    if (!plannedStart || !/^\d{2}:\d{2}$/.test(plannedStart)) return false;
-    return true;
+
+    // Accept "09:00" or "9:00 AM" / "9:00AM"
+    const ok = /^\d{2}:\d{2}$/.test(t) || /^\d{1,2}:\d{2}\s?(AM|PM)$/i.test(t);
+
+    return ok;
   }, [name, selectedIso, selectedDriver?.id, plannedStart]);
-
-  /* ─────────────── address geocode ─────────────── */
-
-  useEffect(() => {
-    if (!address) return;
-    const full = address.split(', ');
-    setLine1(full[0] ?? '');
-    setCity(full[1] ?? '');
-    setRegion(full[2] ?? '');
-    (async () => {
-      try {
-        const res = await axios.request({
-          method: 'GET',
-          url: 'https://google-maps-geocoding3.p.rapidapi.com/geocode',
-          params: { address },
-          headers: {
-            'x-rapidapi-key':
-              'c077600dd0msh70cad04baf5f0e2p187ab4jsn23535e260f32',
-            'x-rapidapi-host': 'google-maps-geocoding3.p.rapidapi.com',
-          },
-        });
-        if (res?.data?.latitude && res?.data?.longitude) {
-          setLatitude(parseFloat(res.data.latitude));
-          setLongitude(parseFloat(res.data.longitude));
-        }
-      } catch {
-        // silent fail ok
-      }
-    })();
-  }, [address]);
-
-  const handleSearchAddress = async (text: string) => {
-    setQuery(text);
-    if (text.length < 3) {
-      setSuggestions([]);
-      return;
-    }
-    try {
-      const response = await axios.request({
-        method: 'GET',
-        url: 'https://google-place-autocomplete-and-place-info.p.rapidapi.com/maps/api/place/autocomplete/json',
-        params: { input: text },
-        headers: {
-          'x-rapidapi-key':
-            'c077600dd0msh70cad04baf5f0e2p187ab4jsn23535e260f32',
-          'x-rapidapi-host':
-            'google-place-autocomplete-and-place-info.p.rapidapi.com',
-        },
-      });
-      setSuggestions(response.data?.predictions || []);
-    } catch {
-      Alert.alert('Error', 'Error searching business addresses.');
-    }
-  };
-
-  /* ─────────────── inbox notify (optional) ─────────────── */
-
-  const notifyRouteDraftCreated = async ({
-    businessId,
-    routeId,
-    routeName,
-    serviceDateISO,
-    plannedStartISO,
-    creatorProfileId,
-    driverProfileId,
-  }: {
-    businessId: number;
-    routeId: number;
-    routeName: string;
-    serviceDateISO: string;
-    plannedStartISO: string;
-    creatorProfileId: number | null;
-    driverProfileId: number | null;
-  }) => {
-    const basePayload = {
-      businessId,
-      type: 'route_draft',
-      severity: 'info',
-      title: 'Route draft created',
-      body: `“${routeName}” scheduled for ${serviceDateISO}.`,
-      actor: 'owner_app',
-      actor_id: creatorProfileId,
-      actionable: true,
-      action_label: 'Open draft',
-      action_route: 'RouteDraftScreen',
-      action_params: { routeId },
-      metadata: {
-        routeId,
-        routeName,
-        serviceDateISO,
-        plannedStartISO,
-        optimize: routeOptimize,
-        driver_display: driverDisplay,
-      },
-      single_day: singleDay,
-      driver_display: driverDisplay,
-      optimize: routeOptimize,
-    };
-
-    await CreateInbox({
-      ...basePayload,
-      profile_id: creatorProfileId,
-      dedupe_key: `route.draft.created:${routeId}:${creatorProfileId}`,
-    });
-
-    if (driverProfileId) {
-      await CreateInbox({
-        ...basePayload,
-        title: 'A new route (draft) was created',
-        body: `“${routeName}” (${serviceDateISO}) has been assigned.`,
-        profile_id: driverProfileId,
-        dedupe_key: `route.draft.created:${routeId}:${driverProfileId}`,
-      });
-    }
-  };
-
-  /* ─────────────── actions ─────────────── */
-
-  const handlePickTime = (_: DateTimePickerEvent, selected?: Date) => {
-    if (selected) setPlannedStart(toHHmm(selected));
-    if (Platform.OS === 'android') setShowTimePicker(false);
-  };
 
   function todayLocalYYYYMMDD(d = new Date()): string {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+    return `${y}-${day}-${m}`;
   }
 
-  const onSave = async () => {
+  const onNext = async () => {
+    console.log('selectedDriver', selectedDriver);
     setLoading(true);
-
     if (!valid) {
-      setLoading(false);
+      console.log('invalid');
       Alert.alert('Missing info', 'Please complete required fields.');
       return;
     }
+    console.log('valid');
+    const time = combineISODateAndTimeUTC(selectedIso, plannedStart);
+    console.log('time', time);
 
     const payload = {
-      business_id: business?.id ?? initialRoute?.business_id ?? null,
-      driver_id: selectedDriver?.Profile?.id ?? null, // profile id
-      employee_id: selectedDriver?.id ?? null, // employee id
+      business_id: business?.id ?? null,
+      driver_id: selectedDriver?.id ?? null, // profile id (if your table expects it)
+      employee_id: selectedDriver?.employee_id ?? null, // employee id
       name: name!.trim(),
-      service_date: initialRoute?.service_date ?? todayLocalYYYYMMDD(), // YYYY-MM-DD
-      status: initialRoute ? initialRoute.status : ('draft' as const),
+      service_date: todayLocalYYYYMMDD(), // YYYY-MM-DD
+      status: 'draft' as const,
       planned_start_at: combineISODateAndTimeUTC(selectedIso, plannedStart),
-      start_longitude: useBusinessHQ ? 0 : longitude || 0,
-      start_latitude: useBusinessHQ ? 0 : latitude || 0,
+      start_longitude: longitude || 0,
+      start_latitude: latitude || 0,
       tags: tagsInput
         .split(',')
         .map(t => t.trim())
@@ -410,62 +236,41 @@ export default function EditRouteScreen() {
       notes: notes || null,
       single_day: singleDay,
       optimize: routeOptimize,
-      driver_display: driverDisplay,
+      driver_display: driverDisplay ? 'full' : 'single',
       auto_trigger_stops: autoTriggerStops,
+      allowed_breaks: parseInt(breaksAmount),
+      end_base: endBase,
+      start_base: startBase,
     };
 
-    try {
-      if (initialRoute?.id) {
-        // EDIT EXISTING
-        const resp = await updateRouter(initialRoute.id, payload);
-        setLoading(false);
-
-        if (!resp.success) {
-          throw new Error(
-            resp.message || resp.error?.message || 'Update failed',
-          );
-        }
-
-        Alert.alert('Saved', 'Route updated successfully.');
-        nav.goBack();
-      } else {
-        // CREATE NEW DRAFT
-        const draft = await createDraftRoute(payload as any);
-        setLoading(false);
-
-        if (draft.success) {
-          await notifyRouteDraftCreated({
-            businessId: (business?.id ?? payload.business_id)!,
-            routeId: draft.data.id,
-            routeName: payload.name,
-            serviceDateISO: payload.service_date,
-            plannedStartISO: payload.planned_start_at,
-            creatorProfileId: profile?.id ?? null,
-            driverProfileId: selectedDriver?.Profile?.id ?? null,
-          });
-          nav.navigate('RouteDraftScreen', {
-            routeId: draft.data.id,
-            payload,
-          });
-        } else {
-          Alert.alert(
-            'Error',
-            draft.error?.message || 'Failed to create route',
-          );
-        }
-      }
-    } catch (e: any) {
-      setLoading(false);
-      Alert.alert('Error', e?.message || 'Something went wrong');
+    console.log('payload', payload);
+    const draft = await updateDraftRoute(payload, route.id);
+    console.log('draft', draft);
+    if (draft.error) {
+      Alert.alert('Error', draft.error.message);
+      return;
     }
+    setLoading(false);
+    nav.goBack();
   };
 
-  /* ─────────────── UI ─────────────── */
+  const handlePickTime = (_: DateTimePickerEvent, selected?: Date) => {
+    if (selected) setPlannedStart(toHHmm(selected));
+    if (Platform.OS === 'android') setShowTimePicker(false);
+  };
+
+  const selectedDriverLabel = useMemo(() => {
+    if (!selectedDriver) return 'Select';
+    const fn = selectedDriver?.first_name?.trim() ?? '';
+    const ln = selectedDriver?.last_name?.trim() ?? '';
+    const full = `${fn} ${ln}`.trim();
+    return full || 'Select';
+  }, [selectedDriver]);
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[tw`flex-1`, { backgroundColor: colors.bg }]}
+      style={[tw`flex-1 `, { backgroundColor: colors.bg }]}
     >
       {/* Header */}
       <View style={tw`px-2 pt-4 pb-4 flex-row items-center`}>
@@ -474,12 +279,12 @@ export default function EditRouteScreen() {
         </TouchableOpacity>
         <View style={tw`pl-2 flex-row items-center justify-between`}>
           <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            {initialRoute ? 'Edit Route' : 'New Route'}
+            Edit Route
           </Text>
         </View>
       </View>
 
-      {/* Body (FlatList to avoid nested virtualized lists warnings) */}
+      {/* Use FlatList so inner virtualized lists (e.g., suggestions) aren’t nested inside a ScrollView */}
       <FlatList
         data={[{ key: 'form' }]}
         keyExtractor={item => item.key}
@@ -537,7 +342,7 @@ export default function EditRouteScreen() {
             <Row style={tw`items-center mb-2`}>
               <MapPin width={16} height={16} color="#9CA3AF" />
               <Text style={[tw`ml-2`, { color: colors.text }]}>
-                Optimize Route with Gemini AI
+                Auto Optimize Route with Gemeni AI
               </Text>
               <View style={tw`flex-1`} />
               <Switch
@@ -547,13 +352,39 @@ export default function EditRouteScreen() {
               />
             </Row>
 
+            <SectionTitle text="Route Start/End" />
+            <Row style={tw`items-center mb-2`}>
+              <MapPin width={16} height={16} color="#9CA3AF" />
+              <Text style={[tw`ml-2`, { color: colors.text }]}>
+                Start the drivers route at HQ / Base
+              </Text>
+              <View style={tw`flex-1`} />
+              <Switch
+                value={startBase}
+                onValueChange={setStartBase}
+                thumbColor={startBase ? colors.primary : '#666'}
+              />
+            </Row>
+            <Row style={tw`items-center mb-2`}>
+              <MapPin width={16} height={16} color="#9CA3AF" />
+              <Text style={[tw`ml-2`, { color: colors.text }]}>
+                End the drivers route at HQ / Base
+              </Text>
+              <View style={tw`flex-1`} />
+              <Switch
+                value={endBase}
+                onValueChange={setEndBase}
+                thumbColor={endBase ? colors.primary : '#666'}
+              />
+            </Row>
+
             <SectionTitle text="Route Display" />
             <Row style={tw`items-center mb-2`}>
               <View style={tw`flex-row items-start`}>
                 <GitPullRequest width={16} height={16} color="#9CA3AF" />
                 <View style={tw`ml-2`}>
                   <Text style={[tw``, { color: colors.text }]}>
-                    Driver Route Display
+                    Display Entire Route
                   </Text>
                   {driverDisplay === 'full' ? (
                     <Text style={[tw`text-xs mt-1`, { color: colors.muted }]}>
@@ -566,6 +397,7 @@ export default function EditRouteScreen() {
                   )}
                 </View>
               </View>
+
               <View style={tw`flex-1`} />
               <Switch
                 value={driverDisplay === 'full'}
@@ -579,10 +411,10 @@ export default function EditRouteScreen() {
             <SectionTitle text="Auto Trigger Stops" />
             <Row style={tw`items-center mb-2`}>
               <Check width={16} height={16} color="#9CA3AF" />
-              <Text style={[tw`ml-2`, { color: colors.text }]}>
-                After stop completion, automatically trigger stop updates
+              <Text style={[tw`ml-2 flex-1`, { color: colors.text }]}>
+                Automatically trigger next stop
               </Text>
-              <View style={tw`flex-1`} />
+              <View style={tw``} />
               <Switch
                 value={autoTriggerStops}
                 onValueChange={setAutoTriggerStops}
@@ -590,12 +422,20 @@ export default function EditRouteScreen() {
               />
             </Row>
 
-            {/* Starting location (toggle to use HQ or custom) */}
+            <SectionTitle text="Breaks" />
+            <Field
+              label="Allowed Breaks"
+              value={breaksAmount}
+              onChangeText={setBreaksAmount}
+              placeholder="0"
+              colors={colors}
+              leftIcon={<Clock width={16} height={16} color="#9CA3AF" />}
+            />
 
-            {/* Toggle for HQ vs. custom */}
-
+            {/* Starting location */}
+            <SectionTitle text="Route Notes (optional)" />
             {/* Tags & Notes */}
-            <SectionTitle text="Tags & Notes (optional)" />
+            {/* <SectionTitle text="Tags & Notes (optional)" />
             <Field
               label="Tags (comma-separated)"
               value={tagsInput}
@@ -603,7 +443,7 @@ export default function EditRouteScreen() {
               placeholder="priority, westside, morning"
               colors={colors}
               leftIcon={<Tag width={16} height={16} color="#9CA3AF" />}
-            />
+            /> */}
             <Text style={tw`text-gray-400 text-xs mb-1`}>Notes</Text>
             <TextInput
               value={notes}
@@ -622,29 +462,26 @@ export default function EditRouteScreen() {
                 },
               ]}
             />
+
+            {/* Footer CTA */}
           </>
         )}
       />
-
-      {/* Footer CTA */}
       <View style={tw`px-4`}>
         <TouchableOpacity
-          onPress={onSave}
-          disabled={!valid || loading}
+          onPress={onNext}
+          disabled={!valid}
           style={[
             tw`px-4 py-3 rounded-2xl items-center mb-8`,
             {
               backgroundColor: valid ? colors.brand.primary : colors.border,
-              opacity: loading ? 0.8 : 1,
             },
           ]}
         >
           {loading ? (
-            <ActivityIndicator size="small" />
+            <ActivityIndicator size="small" color={colors.text} />
           ) : (
-            <Text style={tw`text-white font-semibold`}>
-              {initialRoute ? 'Save Changes' : 'Create Draft'}
-            </Text>
+            <Text style={tw`text-white font-semibold`}>Update</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -719,8 +556,7 @@ export default function EditRouteScreen() {
   );
 }
 
-/* ─────────────── UI bits ─────────────── */
-
+/** UI bits */
 function SectionTitle({ text }: { text: string }) {
   const { colors } = useTheme();
   return (
@@ -733,7 +569,6 @@ function SectionTitle({ text }: { text: string }) {
     </View>
   );
 }
-
 function Row({ children, style }: { children: React.ReactNode; style?: any }) {
   return <View style={[tw`flex-row`, style]}>{children}</View>;
 }

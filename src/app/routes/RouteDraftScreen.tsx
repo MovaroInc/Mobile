@@ -57,7 +57,7 @@ import { CreateInbox } from '../../shared/lib/inboxHelpers';
 import { useSession } from '../../state/useSession';
 
 // Driver helpers
-import { getDrivers } from '../../shared/lib/DriversHelpers';
+import { getDrivers, grabEmployeeById } from '../../shared/lib/DriversHelpers';
 import DriverPickerModal from '../../shared/components/modals/DriverPickerModal';
 
 // Optimizer call (only import the API call; we define ordering locally)
@@ -159,6 +159,7 @@ export default function RouteDraftScreen() {
   const nav = useNavigation<any>();
   const { params } = useRoute<any>();
   const { routeId, payload } = params as RouteParams;
+  console.log('payload', JSON.stringify(payload, null, 2));
 
   const [stops, setStops] = useState<Stop[]>([]);
   const [loading, setLoading] = useState(false);
@@ -336,18 +337,18 @@ export default function RouteDraftScreen() {
     if (!business?.id) return;
     (async () => {
       try {
-        const res = await getDrivers(business.id);
-        const list = (res?.data ?? []).filter(
-          (e: any) => e.is_driver !== false,
+        const res = await getRouteById(routeId);
+        console.log('res', JSON.stringify(res, null, 2));
+        setRoute(res.data);
+        setStops(
+          (res.data.stops || [])
+            .slice()
+            .sort((a: Stop, b: Stop) => a.sequence - b.sequence),
         );
-        setAllDrivers(list);
-
-        const currentEmpId = payload.employee_id ?? route?.employee_id ?? null;
-        const cur = list.find((d: any) => d.id === currentEmpId) ?? null;
-        setSelectedDriver(cur);
+        setSelectedDriver(res.data.driver);
       } catch {}
     })();
-  }, [business?.id, route?.employee_id, payload.employee_id]);
+  }, [business?.id, routeId]);
 
   /* ---------- Data fetch ---------- */
 
@@ -491,7 +492,7 @@ export default function RouteDraftScreen() {
       if (res.success) {
         const newStops = [...stops, res.data];
         setStops(newStops);
-        if (route.optimize) {
+        if (route?.optimize) {
           await optimizeFullRoute(newStops);
         }
       } else {
@@ -499,7 +500,7 @@ export default function RouteDraftScreen() {
       }
     } else {
       // No end base – optimize immediately using current stops
-      if (route.optimize) {
+      if (route?.optimize) {
         await optimizeFullRoute(stops);
       } else {
         // If not optimizing, just publish
@@ -781,297 +782,306 @@ export default function RouteDraftScreen() {
         </TouchableOpacity>
         <View style={tw`pl-2`}>
           <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            Route
+            Single Route Draft
           </Text>
         </View>
       </View>
-
-      <FlatList
-        data={stops}
-        keyExtractor={item => `${item.id}`}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <View style={tw`px-4`}>
-            {/* Summary */}
-            <View
-              style={[
-                tw`rounded-2xl p-3 mb-3`,
-                { backgroundColor: colors.border },
-              ]}
-            >
-              <View style={tw`flex-row items-center justify-between`}>
-                <Text
-                  style={[
-                    tw`text-lg font-semibold mb-1`,
-                    { color: colors.text },
-                  ]}
-                >
-                  {payload.name}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    console.log('route', JSON.stringify(route, null, 2));
-                    nav.navigate('EditRouteScreen', { route });
-                  }}
-                  style={[
-                    tw`ml-2 rounded-lg p-2`,
-                    { backgroundColor: colors.main },
-                  ]}
-                >
-                  <Edit2 width={14} height={14} color={colors.text} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={tw`flex-row items-center mb-1`}>
-                <Calendar width={14} height={14} color={colors.text} />
-                <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
-                  {headerTitle}
-                </Text>
-              </View>
-
-              <View style={tw`flex-row items-center mb-1`}>
-                <Clock width={14} height={14} color={colors.text} />
-                <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
-                  Planned start: {plannedStartHM || '—'}
-                </Text>
-              </View>
-
-              <View style={tw`flex-row items-center justify-between`}>
-                <View style={tw`flex-row items-center`}>
-                  <User width={14} height={14} color={colors.text} />
-                  <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
-                    Driver: #{route?.employee_id ?? payload.employee_id ?? '—'}
-                    {' / '}
-                    {(route?.profile?.first_name ?? '') +
-                      ' ' +
-                      (route?.profile?.last_name ?? '')}
-                  </Text>
-                </View>
-              </View>
-
-              {!!payload.tags?.length && (
-                <Text style={[tw`mt-2 text-xs`, { color: colors.muted }]}>
-                  Tags: {payload.tags.join(', ')}
-                </Text>
-              )}
-              {!!payload.notes && (
-                <Text style={[tw`mt-1 text-xs`, { color: colors.muted }]}>
-                  Notes: {payload.notes}
-                </Text>
-              )}
-            </View>
-
-            {/* Controls */}
-            <View style={tw`flex-row items-center justify-between mb-2`}>
-              <Text
-                style={[tw`text-base font-semibold`, { color: colors.text }]}
-              >
-                Stops ({stops.length})
-              </Text>
-              <View style={tw`flex-row`}>
-                <TouchableOpacity
-                  onPress={openCreate}
-                  style={[
-                    tw`px-3 py-2 rounded-xl flex-row items-center`,
-                    { backgroundColor: colors.brand?.primary || '#2563eb' },
-                  ]}
-                >
-                  <Plus width={16} height={16} color="#fff" />
-                  <Text style={tw`text-white ml-1`}>Add Stop</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {stops.length === 0 && (
+      <View style={tw`flex-1`}>
+        <FlatList
+          data={stops}
+          keyExtractor={item => `${item.id}`}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <View style={tw`px-4`}>
+              {/* Summary */}
               <View
                 style={[
-                  tw`rounded-2xl p-4 mb-3`,
-                  { backgroundColor: colors.border },
-                ]}
-              >
-                <Text style={[tw`text-sm`, { color: colors.muted }]}>
-                  No stops yet. Tap “Add Stop” to get started.
-                </Text>
-              </View>
-            )}
-          </View>
-        }
-        renderItem={({ item, index }) => {
-          const upDisabled =
-            index === 0 || !canMoveStop(item) || !canMoveStop(stops[index - 1]);
-          const downDisabled =
-            index === stops.length - 1 ||
-            !canMoveStop(item) ||
-            !canMoveStop(stops[index + 1]);
-
-          return (
-            <View style={[tw`px-4`]}>
-              <View
-                style={[
-                  tw`rounded-2xl mb-3 p-3`,
+                  tw`rounded-2xl p-3 mb-3`,
                   { backgroundColor: colors.border },
                 ]}
               >
                 <View style={tw`flex-row items-center justify-between`}>
                   <Text
                     style={[
-                      tw`text-base font-semibold`,
+                      tw`text-lg font-semibold mb-1`,
                       { color: colors.text },
                     ]}
                   >
-                    {index + 1}.{' '}
-                    {item.customer_name ||
-                      item.business_name ||
-                      'Unknown Business'}
+                    {payload.name}
                   </Text>
-                  <View style={tw`flex-row`}>
-                    <TouchableOpacity
-                      onPress={() => openEdit(item)}
-                      style={tw`mr-2`}
-                    >
-                      <Edit3 width={18} height={18} color={colors.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => confirmDelete(item)}>
-                      <Trash2 width={18} height={18} color="#ef4444" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {!!item.address_line1 && (
-                  <View style={tw`flex-row items-center mt-1`}>
-                    <MapPin width={14} height={14} color={colors.muted} />
-                    <Text
-                      style={[tw`ml-2 text-sm`, { color: colors.text }]}
-                      numberOfLines={2}
-                    >
-                      {item.address_line1}, {item.city}, {item.region},{' '}
-                      {item.postal_code}
-                    </Text>
-                  </View>
-                )}
-
-                <View style={tw`flex-row items-center justify-start mt-1`}>
-                  {!!item.customer_name && (
-                    <View style={tw`flex-row items-center mr-2`}>
-                      <User width={14} height={14} color={colors.muted} />
-                      <Text
-                        style={[tw`ml-2 text-sm`, { color: colors.text }]}
-                        numberOfLines={2}
-                      >
-                        {item.customer_name}
-                      </Text>
-                    </View>
-                  )}
-                  {!!(item as any).contact_phone && (
-                    <View style={tw`flex-row items-center ml-4`}>
-                      <Phone width={14} height={14} color={colors.muted} />
-                      <Text
-                        style={[tw`ml-2 text-sm`, { color: colors.text }]}
-                        numberOfLines={2}
-                      >
-                        {(item as any).contact_phone}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={tw`flex-row mt-2`}>
-                  {item.window_start && (
-                    <View style={tw`px-2 py-1 rounded-xl mr-2`}>
-                      <Text style={[tw`text-xs`, { color: colors.muted }]}>
-                        {item.window_start
-                          ? `Start ${item.window_start}`
-                          : 'Start —'}
-                      </Text>
-                    </View>
-                  )}
-                  {item.window_end && (
-                    <View style={tw`px-2 py-1 rounded-xl`}>
-                      <Text style={[tw`text-xs`, { color: colors.muted }]}>
-                        {item.window_end ? `End ${item.window_end}` : 'End —'}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={tw`flex-row justify-between items-center mt-2`}>
-                  <View
+                  <TouchableOpacity
+                    onPress={() => {
+                      console.log('route', JSON.stringify(route, null, 2));
+                      nav.navigate('EditRouteScreen', { route });
+                    }}
                     style={[
-                      tw`px-2 py-1 rounded-xl`,
+                      tw`ml-2 rounded-lg p-2`,
                       { backgroundColor: colors.main },
                     ]}
                   >
-                    <Text style={[tw`text-xs`, { color: colors.text }]}>
-                      {(item as any).stop_type}
+                    <Edit2 width={14} height={14} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={tw`flex-row items-center mb-1`}>
+                  <Calendar width={14} height={14} color={colors.text} />
+                  <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
+                    {headerTitle}
+                  </Text>
+                </View>
+
+                <View style={tw`flex-row items-center mb-1`}>
+                  <Clock width={14} height={14} color={colors.text} />
+                  <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
+                    Planned start: {plannedStartHM || '—'}
+                  </Text>
+                </View>
+
+                <View style={tw`flex-row items-center justify-between`}>
+                  <View style={tw`flex-row items-center`}>
+                    <User width={14} height={14} color={colors.text} />
+                    <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
+                      {(route?.driver?.first_name ?? '') +
+                        ' ' +
+                        (route?.driver?.last_name ?? '')}
                     </Text>
                   </View>
-                  <View style={tw`flex-row`}>
+                </View>
+
+                {!!payload.tags?.length && (
+                  <Text style={[tw`mt-2 text-xs`, { color: colors.muted }]}>
+                    Tags: {payload.tags.join(', ')}
+                  </Text>
+                )}
+                {!!payload.notes && (
+                  <Text style={[tw`mt-1 text-xs`, { color: colors.muted }]}>
+                    Notes: {payload.notes}
+                  </Text>
+                )}
+              </View>
+
+              {/* Controls */}
+              <View style={tw`flex-row items-center justify-between mb-2`}>
+                <Text
+                  style={[tw`text-base font-semibold`, { color: colors.text }]}
+                >
+                  Stops ({stops.length})
+                </Text>
+                <View style={tw`flex-row`}>
+                  {!route?.optimize && (
                     <TouchableOpacity
-                      onPress={() => moveUp(index)}
-                      disabled={upDisabled}
+                      onPress={confirmRoute}
+                      disabled={publishing || stops.length === 0}
                       style={[
-                        tw`px-2 py-2 rounded-xl mr-2`,
+                        tw`px-4 py-3 rounded-2xl items-center `,
                         {
-                          backgroundColor: colors.main,
-                          opacity: upDisabled ? 0.5 : 1,
+                          backgroundColor:
+                            publishing || stops.length === 0
+                              ? colors.border
+                              : colors.brand?.primary || '#2563eb',
                         },
                       ]}
                     >
-                      <ArrowUp width={16} height={16} color={colors.text} />
+                      <Text style={tw`text-white font-semibold`}>
+                        {'Optimize Route'}
+                      </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => moveDown(index)}
-                      disabled={downDisabled}
+                  )}
+                  <TouchableOpacity
+                    onPress={onPublish}
+                    disabled={publishing || stops.length === 0}
+                    style={[
+                      tw`px-4 py-3 rounded-2xl items-center ml-2`,
+                      {
+                        backgroundColor:
+                          publishing || stops.length === 0
+                            ? colors.border
+                            : colors.brand?.primary || '#2563eb',
+                      },
+                    ]}
+                  >
+                    <Text style={tw`text-white font-semibold`}>
+                      {'Publish Route'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {stops.length === 0 && (
+                <View
+                  style={[
+                    tw`rounded-2xl p-4 mb-3`,
+                    { backgroundColor: colors.border },
+                  ]}
+                >
+                  <Text style={[tw`text-sm`, { color: colors.muted }]}>
+                    No stops yet. Tap “Add Stop” to get started.
+                  </Text>
+                </View>
+              )}
+            </View>
+          }
+          renderItem={({ item, index }) => {
+            const upDisabled =
+              index === 0 ||
+              !canMoveStop(item) ||
+              !canMoveStop(stops[index - 1]);
+            const downDisabled =
+              index === stops.length - 1 ||
+              !canMoveStop(item) ||
+              !canMoveStop(stops[index + 1]);
+
+            console.log('item', JSON.stringify(item, null, 2));
+
+            return (
+              <View style={[tw`px-4`]}>
+                <View
+                  style={[
+                    tw`rounded-2xl mb-3 p-3`,
+                    { backgroundColor: colors.border },
+                  ]}
+                >
+                  <View style={tw`flex-row items-center justify-between`}>
+                    <Text
                       style={[
-                        tw`px-2 py-2 rounded-xl`,
-                        {
-                          backgroundColor: colors.main,
-                          opacity: downDisabled ? 0.5 : 1,
-                        },
+                        tw`text-base font-semibold`,
+                        { color: colors.text },
                       ]}
                     >
-                      <ArrowDown width={16} height={16} color={colors.text} />
-                    </TouchableOpacity>
+                      {index + 1}. {item?.business_name || 'Unknown Business'}
+                    </Text>
+                    <View style={tw`flex-row`}>
+                      <TouchableOpacity
+                        onPress={() => openEdit(item)}
+                        style={tw`mr-2`}
+                      >
+                        <Edit3 width={18} height={18} color={colors.text} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => confirmDelete(item)}>
+                        <Trash2 width={18} height={18} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {!!item.address_line1 && (
+                    <View style={tw`flex-row items-center mt-1`}>
+                      <MapPin width={14} height={14} color={colors.muted} />
+                      <Text
+                        style={[tw`ml-2 text-sm`, { color: colors.text }]}
+                        numberOfLines={2}
+                      >
+                        {item.address_line1}, {item.city}, {item.region},{' '}
+                        {item.postal_code}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={tw`flex-row items-center justify-start mt-1`}>
+                    {!!item.contact_name && (
+                      <View style={tw`flex-row items-center mr-2`}>
+                        <User width={14} height={14} color={colors.muted} />
+                        <Text
+                          style={[tw`ml-2 text-sm`, { color: colors.text }]}
+                          numberOfLines={2}
+                        >
+                          {item.contact_name}
+                        </Text>
+                      </View>
+                    )}
+                    {!!(item as any).contact_phone && (
+                      <View style={tw`flex-row items-center ml-4`}>
+                        <Phone width={14} height={14} color={colors.muted} />
+                        <Text
+                          style={[tw`ml-2 text-sm`, { color: colors.text }]}
+                          numberOfLines={2}
+                        >
+                          {(item as any).contact_phone}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={tw`flex-row mt-2`}>
+                    {item.window_start && (
+                      <View style={tw`px-2 py-1 rounded-xl mr-2`}>
+                        <Text style={[tw`text-xs`, { color: colors.muted }]}>
+                          {item.window_start
+                            ? `Start ${item.window_start}`
+                            : 'Start —'}
+                        </Text>
+                      </View>
+                    )}
+                    {item.window_end && (
+                      <View style={tw`px-2 py-1 rounded-xl`}>
+                        <Text style={[tw`text-xs`, { color: colors.muted }]}>
+                          {item.window_end ? `End ${item.window_end}` : 'End —'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={tw`flex-row justify-between items-center mt-2`}>
+                    <View
+                      style={[
+                        tw`px-2 py-1 rounded-xl`,
+                        { backgroundColor: colors.main },
+                      ]}
+                    >
+                      <Text style={[tw`text-xs`, { color: colors.text }]}>
+                        {(item as any).stop_type}
+                      </Text>
+                    </View>
+                    <View style={tw`flex-row`}>
+                      <TouchableOpacity
+                        onPress={() => moveUp(index)}
+                        disabled={upDisabled}
+                        style={[
+                          tw`px-2 py-2 rounded-xl mr-2`,
+                          {
+                            backgroundColor: colors.main,
+                            opacity: upDisabled ? 0.5 : 1,
+                          },
+                        ]}
+                      >
+                        <ArrowUp width={16} height={16} color={colors.text} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => moveDown(index)}
+                        disabled={downDisabled}
+                        style={[
+                          tw`px-2 py-2 rounded-xl`,
+                          {
+                            backgroundColor: colors.main,
+                            opacity: downDisabled ? 0.5 : 1,
+                          },
+                        ]}
+                      >
+                        <ArrowDown width={16} height={16} color={colors.text} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </View>
-            </View>
-          );
-        }}
-        ListFooterComponent={
-          <View style={tw`px-4 mt-2 mb-8`}>
-            <TouchableOpacity
-              onPress={
-                route?.optimize
-                  ? fullyOptimized
-                    ? onPublish
-                    : confirmRoute
-                  : onPublish
-              }
-              disabled={publishing || stops.length === 0}
-              style={[
-                tw`px-4 py-3 rounded-2xl items-center`,
-                {
-                  backgroundColor:
-                    publishing || stops.length === 0
-                      ? colors.border
-                      : colors.brand?.primary || '#2563eb',
-                },
-              ]}
-            >
-              <Text style={tw`text-white font-semibold`}>
-                {route?.optimize
-                  ? fullyOptimized
-                    ? 'Publish Route'
-                    : 'Optimize Route'
-                  : publishing
-                  ? 'Publishing…'
-                  : 'Publish Route'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        }
-      />
+            );
+          }}
+        />
+      </View>
+      <View style={tw`px-4 mt-2 mb-4`}>
+        <TouchableOpacity
+          onPress={openCreate}
+          style={[
+            tw`px-4 py-3 rounded-2xl items-center w-full`,
+            {
+              backgroundColor:
+                publishing || stops.length === 0
+                  ? colors.border
+                  : colors.brand?.primary || '#2563eb',
+            },
+          ]}
+        >
+          <Text style={tw`text-white font-semibold`}>{'Add Stop'}</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* DRIVER PICKER MODAL */}
       <DriverPickerModal

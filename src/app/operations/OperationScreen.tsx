@@ -347,7 +347,7 @@ export default function OperationScreen() {
                 }}
                 style={[
                   tw`mb-3 px-4 py-3 rounded-2xl`,
-                  { backgroundColor: 'rgba(48, 48, 48, 0.06)' },
+                  { backgroundColor: colors.borderSecondary },
                 ]}
               >
                 <View style={tw`flex-row justify-between items-center`}>
