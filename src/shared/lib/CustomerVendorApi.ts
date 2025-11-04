@@ -1,7 +1,6 @@
 import { api } from './api';
 
 export const createCustomer = async payload => {
-  console.log('payload', payload);
   const res = await api.post<{
     success: boolean;
     data: any | null;
@@ -12,7 +11,6 @@ export const createCustomer = async payload => {
 };
 
 export const createVendor = async payload => {
-  console.log('payload', payload);
   const res = await api.post<{
     success: boolean;
     data: any | null;
@@ -69,7 +67,6 @@ export const grabCustomers = async (businessId: number) => {
     error: any | null;
     message: string | null;
   }>(`/customers/get-customer-by-business-id/${businessId}`);
-  console.log('res', res);
   return res.data;
 };
 
@@ -79,7 +76,6 @@ export const grabVendors = async (businessId: number) => {
     data: any | null;
     error: any | null;
     message: string | null;
-  }>(`/vendors/get-vendors-by-business-id/${businessId}`);
-  console.log('res', res);
+  }>(`/vendors/get-vendor-by-business-id/${businessId}`);
   return res.data;
 };

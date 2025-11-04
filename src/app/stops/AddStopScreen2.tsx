@@ -34,6 +34,7 @@ import {
   Edit,
   Clipboard,
   Check,
+  ArrowLeft,
 } from 'react-native-feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Field from '../../shared/components/inputs/Field';
@@ -83,15 +84,11 @@ export default function AddStopScreen2() {
   const { colors } = useTheme();
   const { params } = useRoute<any>();
   const { routeId, stopsCount = 0 } = params as RouteParams;
-  console.log('stopsCount', stopsCount);
-  console.log('routeId', routeId);
 
   const getStep1Payload = async () => {
     const step1Payload = await AsyncStorage.getItem('step1Payload');
-    console.log('step1Payload', step1Payload);
     return JSON.parse(step1Payload || '{}');
   };
-  console.log('step1Payload', getStep1Payload());
 
   /** ── Position (sequence) ───────────────────────────────────── */
   // Position choices: 'start' | 'end' | 'after'
@@ -307,18 +304,21 @@ export default function AddStopScreen2() {
       style={[tw`flex-1`, { backgroundColor: colors.bg }]}
     >
       {/* Header */}
-      <View style={tw`px-2 pt-4 pb-2 flex-row items-center`}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <ChevronLeft width={24} height={24} color={colors.text} />
+      <View style={tw`px-4 pt-4 pb-2 flex-row items-center`}>
+        <TouchableOpacity
+          onPress={() => nav.goBack()}
+          style={[tw`p-2 rounded-lg mr-2`, { backgroundColor: colors.button }]}
+        >
+          <ArrowLeft width={18} height={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <View style={tw`pl-2`}>
-          <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            Add Stop
-          </Text>
-          <Text style={[tw`text-xs mt-0.5`, { color: colors.muted }]}>
-            Step 2 of 3 — Schedule, Requirements & Payment
-          </Text>
-        </View>
+        <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
+          Add New Stop
+        </Text>
+      </View>
+      <View style={tw`px-4 pb-4`}>
+        <Text style={[tw`text-xs`, { color: colors.muted }]}>
+          Step 2 of 3 — Schedule, Requirements & Payment
+        </Text>
       </View>
 
       <ScrollView

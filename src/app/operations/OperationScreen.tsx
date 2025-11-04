@@ -104,25 +104,16 @@ export default function OperationScreen() {
     } = await grabVendors(business?.id);
     setCustomers(data.data);
     setVendors(vendorData.data);
-    console.log('business?.customer_id', business?.customer_id);
-    console.log('business?.vendor_id', business?.vendor_id);
     const nonDefaultCustomers = data.data.filter(
       (c: any) => c.id !== business?.customer_id,
     );
     const nonDefaultVendors = vendorData.data.filter(
       (v: any) => v.id !== business?.vendor_id,
     );
-    console.log('nonDefaultCustomers', nonDefaultCustomers);
-    console.log('nonDefaultVendors', nonDefaultVendors);
     setFilteredCustomers(nonDefaultCustomers);
     setFilteredVendors(nonDefaultVendors);
     setLoading(false);
   };
-
-  useEffect(() => {
-    console.log(filteredCustomers);
-    console.log(filteredVendors);
-  }, [filteredCustomers, filteredVendors]);
 
   const handleDeleteCustomer = async (id: number) => {
     Alert.alert(
@@ -139,17 +130,35 @@ export default function OperationScreen() {
     );
   };
 
+  useEffect(() => {
+    query.length > 0
+      ? tab === 'Customers'
+        ? setFilteredCustomers(
+            customers.filter(
+              c =>
+                c.name.toLowerCase().includes(query.toLowerCase()) ||
+                c.contact_name.toLowerCase().includes(query.toLowerCase()),
+            ),
+          )
+        : setFilteredVendors(
+            vendors.filter(
+              v =>
+                v.name.toLowerCase().includes(query.toLowerCase()) ||
+                v.contact_name.toLowerCase().includes(query.toLowerCase()),
+            ),
+          )
+      : (setFilteredCustomers(customers), setFilteredVendors(vendors));
+  }, [query, customers, vendors]);
+
   const deleteRecord = async (id: number) => {
     if (tab === 'Customers') {
       const res = await deleteCustomer(id);
-      console.log('deleteCustomer', res);
       if (!res?.data.id)
         throw new Error(res?.message || 'Failed to create customer');
       Alert.alert('Saved', 'Customer created');
       loadRecords();
     } else {
       const res = await deleteVendor(id);
-      console.log('deleteVendor', res);
       if (!res?.data.id)
         throw new Error(res?.message || 'Failed to create vendor');
       Alert.alert('Saved', 'Vendor created');
@@ -238,7 +247,6 @@ export default function OperationScreen() {
           keyExtractor={i => String(i.id)}
           contentContainerStyle={tw`px-4 pb-28`}
           renderItem={({ item }) => {
-            console.log(item);
             return (
               <TouchableOpacity
                 onPress={() => {
@@ -249,7 +257,7 @@ export default function OperationScreen() {
                 }}
                 style={[
                   tw`mb-3 px-4 py-3 rounded-2xl`,
-                  { backgroundColor: 'rgba(255,255,255,0.06)' },
+                  { backgroundColor: colors.borderSecondary },
                 ]}
               >
                 <View style={tw`flex-row justify-between items-center`}>
@@ -336,7 +344,6 @@ export default function OperationScreen() {
           keyExtractor={i => String(i.id)}
           contentContainerStyle={tw`px-4 pb-28`}
           renderItem={({ item }) => {
-            console.log(item);
             return (
               <TouchableOpacity
                 onPress={() => {
@@ -363,7 +370,7 @@ export default function OperationScreen() {
                     <TouchableOpacity
                       onPress={() => {
                         navigation.navigate('EditParty', {
-                          mode: 'customer',
+                          mode: 'vendor',
                           record: item,
                         });
                       }}

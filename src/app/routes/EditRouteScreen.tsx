@@ -208,16 +208,12 @@ export default function EditRouteScreen() {
   }
 
   const onNext = async () => {
-    console.log('selectedDriver', selectedDriver);
     setLoading(true);
     if (!valid) {
-      console.log('invalid');
       Alert.alert('Missing info', 'Please complete required fields.');
       return;
     }
-    console.log('valid');
     const time = combineISODateAndTimeUTC(selectedIso, plannedStart);
-    console.log('time', time);
 
     const payload = {
       business_id: business?.id ?? null,
@@ -243,9 +239,7 @@ export default function EditRouteScreen() {
       start_base: startBase,
     };
 
-    console.log('payload', payload);
     const draft = await updateDraftRoute(payload, route.id);
-    console.log('draft', draft);
     if (draft.error) {
       Alert.alert('Error', draft.error.message);
       return;

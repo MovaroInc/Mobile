@@ -122,7 +122,7 @@ export default function RouteAnalyticsScreen() {
           <ChevronLeft width={22} height={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={[tw`text-xl font-bold`, { color: colors.text }]}>
-          Analytics
+          Analytics screen
         </Text>
         <View style={tw`flex-1`} />
       </View>

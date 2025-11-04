@@ -730,7 +730,7 @@ function Section({
       <Text style={[tw`text-base font-semibold mb-2`, { color: colors.text }]}>
         {title}
       </Text>
-      <View style={[tw`rounded-2xl p-3`, { backgroundColor: colors.main }]}>
+      <View style={[tw`rounded-2xl p-3`, { backgroundColor: colors.card }]}>
         {children}
       </View>
     </View>
@@ -774,7 +774,7 @@ function StatCard({
     <View
       style={[
         tw`flex-1 px-3 py-3 rounded-2xl`,
-        { backgroundColor: colors.main },
+        { backgroundColor: colors.card },
       ]}
     >
       <Text style={[tw`text-2xs`, { color: colors.muted }]}>{label}</Text>

@@ -49,12 +49,18 @@ import {
   openAppSettings,
   onReturnFromSettings,
   isAlwaysLike,
+  isWithinOneMile,
+  getOneFix,
 } from '../../shared/lib/locations';
 
 // 🔴 IMPORTANT: no ".ts" extension here
 import { startLiveFeed, stopLiveFeed } from '../../shared/lib/liveFeed';
 import { getBusinessAdmin } from '../../shared/lib/BusinessHelpers';
 import { sendNotification } from '../../shared/lib/notifications';
+import StartGateMapCard from '../../shared/components/Map/StartGateMapCard';
+
+const MAPBOX_TOKEN =
+  'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A';
 
 /* ───────────────── types ───────────────── */
 
@@ -121,11 +127,14 @@ function hhmmFromISO(iso?: string | null) {
   return `${h}:${mm} ${ampm}`;
 }
 
-const convertToYYYYMMDD = (date: string) => {
-  const [day, month, year] = date.split('/');
-  return `${year}-${month}-${day}`;
-};
-const todayLocalYYYYMMDD = convertToYYYYMMDD(new Date().toLocaleDateString());
+function todayLocalYYYYMMDD(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const today = todayLocalYYYYMMDD();
 
 function greeting() {
   const h = new Date().getHours();
@@ -202,6 +211,8 @@ export default function DriverTodayScreen() {
   const [nextStop, setNextStop] = useState<Stop | null>(null);
   const [remainingCount, setRemainingCount] = useState<number>(0);
 
+  const [startWithin1Mile, setStartWithin1Mile] = useState(false);
+
   const [needsCloseFromYesterday, setNeedsCloseFromYesterday] = useState(false);
   const [allDoneToday, setAllDoneToday] = useState(false);
   const [routeAttempted, setRouteAttempted] = useState(false);
@@ -255,8 +266,10 @@ export default function DriverTodayScreen() {
       const loadData = async () => {
         await recheckLocationGate(); // check permission first
         const timesheetData = await checkTimesheet();
-        if (timesheetData && timesheetData.length > 0) {
+        if (timesheetData && timesheetData.id) {
           await run();
+        } else {
+          await validateWtihin1Mile();
         }
       };
       void loadData();
@@ -302,26 +315,18 @@ export default function DriverTodayScreen() {
 
     setLoading(true);
     try {
-      const resY = await grabDriverLastEntryPriorToday(
-        profile.id,
-        todayLocalYYYYMMDD,
-      );
+      const resY = await grabDriverLastEntryPriorToday(profile.id, today);
       const yEntry = resY.data;
       if (yEntry) setYesterdayTimeEntry(yEntry);
       setNeedsCloseFromYesterday(!!yEntry && !yEntry.clock_out);
 
-      const resToday = await grabDriverTimeEntries(
-        profile.id,
-        todayLocalYYYYMMDD,
-      );
-      console.log('resToday', resToday.data[0]);
-      if (resToday?.data?.[0]?.clock_in && resToday?.data?.[0]?.clock_out) {
+      const resToday = await grabDriverTimeEntries(profile.id, today);
+      if (resToday?.data?.clock_in && resToday?.data?.clock_out) {
         setClosedTimeSheet(true);
         setClockedOut(true);
       }
 
-      const isClockedIn =
-        !!resToday?.success && (resToday.data?.length ?? 0) > 0;
+      const isClockedIn = resToday.data?.id && resToday.data?.clock_in;
       if (!isClockedIn) {
         setTimeEntry([]);
         setClockedIn(false);
@@ -345,9 +350,37 @@ export default function DriverTodayScreen() {
     }
   };
 
+  const validateWtihin1Mile = async () => {
+    if (!profile?.id) return;
+    const res = await grabRouteProfileAndDate(profile.id ?? 0, today);
+    const r: RouteRecord | null = res?.success ? res.data ?? null : null;
+    setRoute(r);
+    const routeStatus = r?.status;
+    const fix = await getOneFix();
+    if (fix.ok) {
+      const within = isWithinOneMile(
+        { latitude: fix.coords.latitude, longitude: fix.coords.longitude },
+        {
+          latitude: r?.start_latitude ?? 0,
+          longitude: r?.start_longitude ?? 0,
+        },
+      );
+      if (
+        within.within &&
+        routeStatus === 'dispatched' &&
+        r?.start_base &&
+        !clockedIn
+      ) {
+        setStartWithin1Mile(false);
+      } else {
+        setStartWithin1Mile(true);
+      }
+    }
+  };
+
   const run = async () => {
     try {
-      const res = await grabRouteProfileAndDate(profile.id, todayLocalYYYYMMDD);
+      const res = await grabRouteProfileAndDate(profile.id, today);
       const r: RouteRecord | null = res?.success ? res.data ?? null : null;
       setRoute(r);
       setAllowedBreaks(!!r?.allowed_breaks);
@@ -509,7 +542,7 @@ export default function DriverTodayScreen() {
         driverId: (profile as any).employee_id ?? profile.id,
         businessId: business.id,
         routeId: route?.id ?? null,
-        service_date: todayLocalYYYYMMDD,
+        service_date: today,
       });
 
       liveCleanupRef.current = cleanup;
@@ -585,10 +618,7 @@ export default function DriverTodayScreen() {
       }
 
       // close yesterday if needed
-      const resY = await grabDriverLastEntryPriorToday(
-        profile?.id ?? 0,
-        todayLocalYYYYMMDD,
-      );
+      const resY = await grabDriverLastEntryPriorToday(profile?.id ?? 0, today);
       const yEntry = resY.data;
       if (
         yEntry &&
@@ -613,7 +643,7 @@ export default function DriverTodayScreen() {
       const res = await createTimeEntry({
         business_id: business.id,
         profile_id: profile.id,
-        selected_date: todayLocalYYYYMMDD,
+        selected_date: today,
         clock_in: new Date().toISOString(),
         clock_out: null,
         status: 'open',
@@ -621,6 +651,18 @@ export default function DriverTodayScreen() {
         source: 'app',
         notes: 'Clocked in from driver app',
       });
+
+      if (route?.id) {
+        const resRoute = await updateRouter(route?.id ?? 0, {
+          status: 'in_progress',
+        });
+
+        setStartWithin1Mile(false);
+
+        if (resRoute?.success) {
+          setRoute(resRoute.data);
+        }
+      }
 
       if (res?.success) {
         setTimeEntry(res.data || []);
@@ -644,7 +686,6 @@ export default function DriverTodayScreen() {
     // NOTE: The original code used 'invite.business_id', but the context was 'business.id'.
     // I'm using 'invite.business_id' as provided in your prompt, but verify this is correct.
     const admin = await getBusinessAdmin(business?.id ?? 0);
-    console.log('admin list', admin);
 
     if (admin.data.length > 0) {
       // 1. FILTER: First, filter the admin data to only include those with a valid apns_token.
@@ -656,7 +697,6 @@ export default function DriverTodayScreen() {
 
       // 2. MAP: Then, create an array of Promises only for the filtered admins.
       const sendPromises = adminsWithToken.map(async (a: any) => {
-        console.log('admin found', a);
         const token = a.profile.device[0].apns_token;
 
         const payload = {
@@ -753,7 +793,14 @@ export default function DriverTodayScreen() {
     const routeRef = r ?? route;
     if (!routeRef) return;
     try {
-      await updateStopStatus(stop.id, { status: 'en_route' });
+      if (stop.status === 'scheduled') {
+        await updateStopStatus(stop.id, { status: 'en_route' });
+        markEnrouteLocal(stop.id);
+        navigation.navigate(
+          'Stop' as never,
+          { stop: { ...stop, status: 'en_route' } } as never,
+        );
+      }
       markEnrouteLocal(stop.id);
       navigation.navigate(
         'Stop' as never,
@@ -897,7 +944,7 @@ export default function DriverTodayScreen() {
           <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
             {clockedIn ? 'Your day at a glance' : 'Start your day'}
           </Text>
-          <TouchableOpacity
+          {/* <TouchableOpacity
             onPress={() => {}}
             style={[
               tw`p-2 rounded-2 border`,
@@ -913,7 +960,7 @@ export default function DriverTodayScreen() {
               style={tw`mr-1`}
               color={colors.muted}
             />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
 
@@ -923,7 +970,7 @@ export default function DriverTodayScreen() {
           <View
             style={[
               tw`mx-4 mb-3 px-3 py-2 rounded-2xl flex-row items-center justify-between`,
-              { backgroundColor: colors.border },
+              { backgroundColor: colors.card },
             ]}
           >
             <View style={tw`flex-1 mr-4`}>
@@ -948,11 +995,13 @@ export default function DriverTodayScreen() {
             />
           </View>
         </>
+      ) : startWithin1Mile ? (
+        <View />
       ) : (
         <View
           style={[
             tw`mx-4 mb-3 px-3 py-2 rounded-2xl flex-row items-center justify-between`,
-            { backgroundColor: colors.border },
+            { backgroundColor: colors.card },
           ]}
         >
           <View>
@@ -1050,7 +1099,23 @@ export default function DriverTodayScreen() {
       )}
 
       {/* Content */}
-      {!clockedIn ? (
+      {startWithin1Mile ? (
+        <View style={tw`px-4`}>
+          <StartGateMapCard
+            token={MAPBOX_TOKEN}
+            start={{
+              latitude: route?.start_latitude ?? 0,
+              longitude: route?.start_longitude ?? 0,
+            }}
+            colors={colors}
+            pollMs={5000} // 5 seconds
+            onResolved={notWithin => {
+              setStartWithin1Mile(notWithin);
+            }}
+            forceClockIn={handleClockIn}
+          />
+        </View>
+      ) : !clockedIn ? (
         <View />
       ) : !routeAttempted ? (
         <View style={[tw`flex-1 items-center justify-center`]}>
@@ -1082,7 +1147,7 @@ export default function DriverTodayScreen() {
                   style={[
                     tw`rounded-2xl p-3 mb-2`,
                     {
-                      backgroundColor: colors.borderSecondary || colors.border,
+                      backgroundColor: colors.card,
                     },
                   ]}
                 >
@@ -1103,7 +1168,7 @@ export default function DriverTodayScreen() {
                   <View
                     style={[
                       tw`h-2 rounded-full mt-3`,
-                      { backgroundColor: '#1f2937' },
+                      { backgroundColor: colors.border },
                     ]}
                   >
                     <View
@@ -1220,7 +1285,7 @@ export default function DriverTodayScreen() {
               <View
                 style={[
                   tw`rounded-2 overflow-hidden p-2 flex-1 pt-4`,
-                  { backgroundColor: colors.borderSecondary },
+                  { backgroundColor: colors.card },
                 ]}
               >
                 <FlatList
@@ -1358,9 +1423,14 @@ function Stat({
 }) {
   return (
     <View
-      style={[tw`flex-1 px-3 py-3 rounded-xl`, { backgroundColor: '#0f172a' }]}
+      style={[
+        tw`flex-1 px-3 py-3 rounded-xl`,
+        { backgroundColor: colors.border },
+      ]}
     >
-      <Text style={[tw`text-2xs`, { color: '#9CA3AF' }]}>{label}</Text>
+      <Text style={[tw`text-2xs`, { color: colors.textSecondary }]}>
+        {label}
+      </Text>
       <Text style={[tw`text-lg font-bold mt-0.5`, { color: colors.text }]}>
         {value}
       </Text>
@@ -1422,14 +1492,14 @@ function ActionPill({
     <TouchableOpacity
       onPress={onPress}
       style={[
-        tw`px-2 py-1 rounded-lg flex-row items-center`,
-        { backgroundColor: '#0f172a' },
+        tw`px-3 py-1.5 rounded-full flex-row items-center`,
+        { backgroundColor: colors.brand.primary },
       ]}
     >
-      {LeftIcon ? <LeftIcon width={14} height={14} color={'#9CA3AF'} /> : null}
-      <Text style={[tw`text-2xs font-semibold ml-1`, { color: '#9CA3AF' }]}>
-        {label}
-      </Text>
+      {LeftIcon ? (
+        <LeftIcon width={14} height={14} color="#fff" strokeWidth={1.5} />
+      ) : null}
+      <Text style={[tw`text-2xs font-semibold ml-1 text-white`]}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -1462,10 +1532,7 @@ function StopRow({
     <TouchableOpacity
       activeOpacity={0.9}
       onPress={() => {}}
-      style={[
-        tw`px-3 pb-2 rounded-xl`,
-        { backgroundColor: colors.borderSecondary },
-      ]}
+      style={[tw`px-3 pb-2 rounded-xl`, { backgroundColor: colors.card }]}
     >
       <View style={tw`flex-row items-start justify-start`}>
         <View style={tw`flex-row items-center`}>
@@ -1525,7 +1592,7 @@ function StopRow({
 
           <View style={tw`flex-row mt-2 justify-between`}>
             <View style={tw`flex-row`}>
-              {isCurrentRoute && item.status === 'scheduled' ? (
+              {isCurrentRoute && isCurrentStop ? (
                 <ActionPill
                   label="Head to stop"
                   LeftIcon={NavIcon}
@@ -1534,7 +1601,9 @@ function StopRow({
                 />
               ) : (
                 <>
-                  {isCurrentRoute && item.status === 'arrived' ? (
+                  {isCurrentRoute &&
+                  item.status === 'arrived' &&
+                  isCurrentStop ? (
                     <ActionPill
                       label="Continue to stop"
                       LeftIcon={NavIcon}
@@ -1561,14 +1630,14 @@ function StopRow({
                 </>
               )}
               <View style={tw`w-2`} />
-              {item.contact_phone || item.phone ? (
+              {/* {item.contact_phone || item.phone ? (
                 <ActionPill
                   label="Call"
                   LeftIcon={Phone}
                   onPress={onCall}
                   colors={colors}
                 />
-              ) : null}
+              ) : null} */}
             </View>
           </View>
         </View>

@@ -13,7 +13,6 @@ export async function checkEmailAvailable(email: string): Promise<boolean> {
     available: boolean;
     error?: string;
   }>('/users/validate-email', { params: { email } });
-  console.log('data', data);
   if (!data.ok) return false;
   return data.available;
 }

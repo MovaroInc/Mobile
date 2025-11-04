@@ -19,7 +19,7 @@ import {
   useFocusEffect,
 } from '@react-navigation/native';
 import { api } from '../../shared/lib/api'; // <- your axios/fetch wrapper
-import { ChevronLeft } from 'react-native-feather';
+import { ArrowLeft, ChevronLeft } from 'react-native-feather';
 import { useTheme } from '../../shared/hooks/useTheme';
 import axios from 'axios';
 import {
@@ -177,7 +177,6 @@ export default function EditPartyScreen() {
       },
     };
     const customerPosition = await axios.request(options);
-    console.log(customerPosition);
     setLatitude(parseFloat(customerPosition.data.latitude));
     setLongitude(parseFloat(customerPosition.data.longitude));
   };
@@ -211,14 +210,12 @@ export default function EditPartyScreen() {
       // Adjust endpoints to yours if different
       if (mode === 'customer') {
         const res = await editCustomer(record.id, payload);
-        console.log('editCustomer', res);
         if (!res?.data.id)
           throw new Error(res?.message || 'Failed to create customer');
         Alert.alert('Saved', 'Customer created');
         nav.goBack();
       } else {
         const res = await editVendor(record.id, payload);
-        console.log('editVendor', res);
         if (!res?.data.id)
           throw new Error(res?.message || 'Failed to create vendor');
         Alert.alert('Saved', 'Vendor created');
@@ -238,7 +235,7 @@ export default function EditPartyScreen() {
     }
   };
 
-  const title = mode === 'customer' ? 'Add Customer' : 'Add Vendor';
+  const title = mode === 'customer' ? 'Edit Customer' : 'Edit Vendor';
 
   return (
     <KeyboardAvoidingView
@@ -246,12 +243,15 @@ export default function EditPartyScreen() {
       style={[tw`flex-1`, { backgroundColor: colors.bg }]}
     >
       {/* Simple header */}
-      <View style={tw`px-2 pt-4 pb-2 flex-row items-center justify-start`}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <ChevronLeft width={24} height={24} color={colors.text} />
+      <View style={tw`px-4 pt-4 pb-2 flex-row items-center`}>
+        <TouchableOpacity
+          onPress={() => nav.goBack()}
+          style={[tw`p-2 rounded-lg mr-2`, { backgroundColor: colors.button }]}
+        >
+          <ArrowLeft width={18} height={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={[tw`text-2xl font-bold ml-2`, { color: colors.text }]}>
-          {title}
+        <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
+          Edit {mode === 'customer' ? 'Customer' : 'Vendor'}
         </Text>
       </View>
 
@@ -395,16 +395,14 @@ export default function EditPartyScreen() {
       </ScrollView>
 
       {/* Footer */}
-      <View style={tw`px-4 pb-6`}>
+      <View style={tw`px-4 pb-4 pt-3`}>
         <TouchableOpacity
           onPress={onSave}
           disabled={!valid || loading}
           style={[
             tw`px-4 py-3 rounded-2xl items-center`,
             {
-              backgroundColor: valid
-                ? colors.brand.primary
-                : 'rgba(255,255,255,0.15)',
+              backgroundColor: valid ? colors.brand.primary : colors.button,
             },
           ]}
         >
@@ -446,7 +444,7 @@ function Field(props: any) {
         placeholderTextColor={'#9CA3AF'}
         style={[
           tw`px-3 py-2 rounded-xl`,
-          { color: colors.text, backgroundColor: colors.border },
+          { color: colors.text, backgroundColor: colors.button },
         ]}
       />
     </View>

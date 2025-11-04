@@ -38,7 +38,6 @@ const ConfirmationScreen = () => {
 
   const loadPlan = async () => {
     const plan = await AsyncStorage.getItem('selectedPlan');
-    console.log('plan', plan);
     setSelectedPlan(JSON.parse(plan || '{}')); // could also include tier info if desired
   };
 

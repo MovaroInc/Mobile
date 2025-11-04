@@ -182,7 +182,6 @@ const CreatingProfileScreen = () => {
 
   const createDevice = async (createdProfile: any) => {
     const token = await AsyncStorage.getItem('@apns_device_token');
-    console.log('[APNSTokenManager] Token saved to AsyncStorage');
     if (createdProfile.id) {
       const payload = {
         apns_token: token,
@@ -254,7 +253,6 @@ const CreatingProfileScreen = () => {
     const businessLatitude = await AsyncStorage.getItem('businessLatitude');
     const businessLongitude = await AsyncStorage.getItem('businessLongitude');
     const splitAddress = businessAddress?.split(', ');
-    console.log('splitAddress', splitAddress);
     const b_address = splitAddress?.[0];
     const b_city = splitAddress?.[1];
     const b_state = splitAddress?.[2];
@@ -338,7 +336,6 @@ const CreatingProfileScreen = () => {
   };
 
   const createCustomer = async (biz: any, usr: any) => {
-    console.log('creating customer', biz, usr);
     setProcessing({ ...processing, creatingCustomer: true });
     const { data } = await createCustomerAccount(
       biz?.id,
@@ -364,7 +361,6 @@ const CreatingProfileScreen = () => {
       {},
       true,
     );
-    console.log('customer', data);
     if (!data.success) {
       setErrors(es => ({
         ...es,
@@ -395,11 +391,10 @@ const CreatingProfileScreen = () => {
   };
 
   const FinishingUp = async (biz: any, usr: any, empl: any, cust: any) => {
-    console.log('finishing up', usr, biz, empl, cust);
     setProcessing({ ...processing, finishingUp: true });
     const { data } = await updateProfileAndBusiness(usr, biz, empl, cust);
-    console.log('finishing', data);
     if (!data.success) {
+      console.log('data', JSON.stringify(data, null, 2));
       setErrors(es => ({
         ...es,
         finishingUp: data?.message || 'Failed to finish up',
@@ -408,6 +403,7 @@ const CreatingProfileScreen = () => {
       setStepDone(sd => ({ ...sd, finishingUp: true }));
       return;
     }
+    console.log('data', JSON.stringify(data, null, 2));
     setCustomer(data.data);
     setProcessing(ps => ({ ...ps, finishingUp: false }));
     setStepDone(sd => ({ ...sd, finishingUp: true }));

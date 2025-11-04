@@ -41,7 +41,6 @@ const ValidateLocationScreen = () => {
   const checkLocation = async () => {
     setLoading(true);
     const geo_success = (position: any) => {
-      console.log('geo_success', position);
       setGranted(true);
       setLoading(false);
     };

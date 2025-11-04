@@ -239,15 +239,10 @@ export default function CustomerVendorOverviewScreen() {
 
   // Replaces previous hydrateEntity/metrics/recentStops with a single call
   const hydrateAll = useCallback(async () => {
-    console.log('hydrateAll', entityId, entityType);
     if (!entityId) return;
-    console.log('loading true');
     setLoading(true);
     try {
-      console.log('getting entity');
       const resp = await getEntityById(Number(entityId), entityType);
-      console.log('response grabbed');
-      console.log('entity resp', JSON.stringify(resp.data, null, 2));
       // resp expected shape: { success, data: { entity, metrics, stops }, error, message }
       const payload: EntityOverview | null = resp?.success ? resp.data : null;
       if (!payload) {
@@ -574,8 +569,8 @@ export default function CustomerVendorOverviewScreen() {
               <View
                 key={String(s.id)}
                 style={[
-                  tw`mb-2 px-3 py-2 rounded-xl`,
-                  { backgroundColor: colors.border },
+                  tw`mb-1 px-3 py-2 rounded-xl`,
+                  { backgroundColor: colors.button },
                 ]}
               >
                 <Text
@@ -630,7 +625,7 @@ function Section({
       <Text style={[tw`text-base font-semibold mb-2`, { color: colors.text }]}>
         {title}
       </Text>
-      <View style={[tw`rounded-2xl p-3`, { backgroundColor: colors.main }]}>
+      <View style={[tw`rounded-2xl p-3`, { backgroundColor: colors.card }]}>
         {children}
       </View>
     </View>
@@ -672,7 +667,7 @@ function StatCard({
     <View
       style={[
         tw`flex-1 px-3 py-3 rounded-2xl`,
-        { backgroundColor: colors.main },
+        { backgroundColor: colors.card },
       ]}
     >
       <Text style={[tw`text-2xs`, { color: colors.muted }]}>{label}</Text>

@@ -13,7 +13,6 @@ import {
 import RoutesStack from '../stacks/RoutesStack';
 import OperationsStack from '../stacks/OperationsStack';
 import DriversStack from '../stacks/DriversStack';
-import AnalyticsStack from '../stacks/AnalyticsStack';
 import ProfileStack from '../stacks/ProfileStack';
 import { useTheme } from '../../../shared/hooks/useTheme';
 import InboxStack from '../stacks/InboxStack';

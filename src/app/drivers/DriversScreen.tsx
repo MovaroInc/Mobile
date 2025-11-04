@@ -40,12 +40,20 @@ import { useTheme } from '../../shared/hooks/useTheme';
 import { useSession } from '../../state/useSession';
 import { api } from '../../shared/lib/api';
 import { getDrivers } from '../../shared/lib/DriversHelpers';
-import { getInviteByBusinessId } from '../../shared/lib/InviteHelpers';
+import {
+  deleteInvite,
+  getInviteByBusinessId,
+} from '../../shared/lib/InviteHelpers';
 import { emitInboxEvent } from '../../shared/lib/inboxHelpers';
 import {
   useLiveLocations,
   lastSeenText,
 } from '../../shared/hooks/useLiveLocations';
+import {
+  createTimeEntry,
+  grabDriverTimeEntries,
+  updateTimeEntry,
+} from '../../shared/lib/ImageHelpers';
 
 /* ───────────────── types ───────────────── */
 
@@ -127,7 +135,6 @@ export default function DriversScreen() {
   const { colors } = useTheme();
   const { business } = useSession();
   const { rowsMap } = useLiveLocations(business?.id);
-  console.log('rowsMap', rowsMap);
 
   // Tabs
   const [tab, setTab] = useState<Tab>('drivers');
@@ -140,6 +147,8 @@ export default function DriversScreen() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [actionDriver, setActionDriver] = useState<Driver | null>(null);
+  const [actionTimeSheet, setActionTimeSheet] = useState<any | null>(null);
+  const [showActionModal, setShowActionModal] = useState(false);
 
   // Invites
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -194,7 +203,6 @@ export default function DriversScreen() {
     setLoadingInvites(true);
     try {
       const all = (await getInviteByBusinessId(business.id)) ?? [];
-      console.log('all', all.data);
       setInvites(all.data);
       // await emitInboxEvent(business.id);
     } catch {
@@ -244,11 +252,181 @@ export default function DriversScreen() {
     });
   }, [drivers, rowsMap]);
 
+  function todayLocalYYYYMMDD(d = new Date()): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  const today = todayLocalYYYYMMDD();
+
+  const handleSelectedDriver = async (driver: Driver) => {
+    setShowActionModal(true);
+    setActionDriver(driver);
+    try {
+      const res = await grabDriverTimeEntries(driver.profile_id, today);
+      if (res?.data) {
+        setActionTimeSheet(res?.data);
+      } else {
+        setActionTimeSheet(null);
+      }
+    } catch (e: any) {
+      console.log('error', e);
+    }
+  };
+
+  const handleForceClockIn = async (driver: Driver) => {
+    setShowActionModal(false);
+    try {
+      const res = await createTimeEntry({
+        business_id: business.id,
+        profile_id: actionDriver?.profile_id ?? 0,
+        selected_date: today,
+        clock_in: new Date().toISOString(),
+        clock_out: null,
+        status: 'open',
+        duration_minutes: null,
+        source: 'app',
+        notes: 'Manually forced clock in from owner app',
+      });
+      if (res?.success) {
+        setActionTimeSheet(res.data);
+      } else {
+        console.log('error', res?.message);
+      }
+    } catch (e: any) {
+      console.log('error', e);
+    } finally {
+      setActionDriver(null);
+    }
+  };
+
+  const handleForceClockOut = async () => {
+    setShowActionModal(false);
+    try {
+      const res = await updateTimeEntry(actionTimeSheet?.id, {
+        clock_out: new Date().toISOString(),
+        status: 'closed',
+      });
+      if (res?.success) {
+        console.log('res', res);
+        setActionTimeSheet(res.data);
+      } else {
+        console.log('error', res?.message);
+      }
+    } catch (e: any) {
+      console.log('error', e);
+    } finally {
+      setActionDriver(null);
+    }
+  };
+
+  const handleForceUndoClockOut = async () => {
+    setShowActionModal(false);
+    try {
+      const res = await updateTimeEntry(actionTimeSheet?.id, {
+        clock_out: null,
+        status: 'open',
+      });
+      if (res?.success) {
+        console.log('res', res);
+        setActionTimeSheet(res.data);
+      } else {
+        console.log('error', res?.message);
+      }
+    } catch (e: any) {
+      console.log('error', e);
+    } finally {
+      setActionDriver(null);
+    }
+  };
+  // const checkTimesheet = async () => {
+
+  //   setLoading(true);
+  //   try {
+  //     const resToday = await grabDriverTimeEntries(profile.id, today);
+
+  //   } catch {
+  //     console.log('error');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+  // const handleClockOut = async () => {
+  //   try {
+  //     const current = timeEntry[0];
+  //     if (!current?.id || !current?.clock_in) {
+  //       Alert.alert(
+  //         'No open timesheet',
+  //         'Could not find an active time entry to close.',
+  //       );
+  //       return;
+  //     }
+  //     const res = await updateTimeEntry(current.id, {
+  //       clock_out: new Date().toISOString(),
+  //       status: 'closed',
+  //     });
+  //     if (!res?.success) {
+  //       Alert.alert('Clock out failed', res?.message || 'Please try again.');
+  //       return;
+  //     }
+  //     checkTimesheet();
+  //     Alert.alert('Clocked out', 'Your time has been recorded.');
+  //   } catch (e: any) {
+  //     Alert.alert('Clock out failed', e?.message || 'Please try again.');
+  //   }
+  // };
+
+  // const handleClockIn = async () => {
+  //   try {
+  //     setLoading(true);
+
+  //     // create today entry
+  //     const res = await createTimeEntry({
+  //       business_id: business.id,
+  //       profile_id: profile.id,
+  //       selected_date: today,
+  //       clock_in: new Date().toISOString(),
+  //       clock_out: null,
+  //       status: 'open',
+  //       duration_minutes: null,
+  //       source: 'app',
+  //       notes: 'Clocked in from driver app',
+  //     });
+
+  //     const resRoute = await updateRouter(route?.id ?? 0, {
+  //       status: 'in_progress',
+  //     });
+
+  //     setStartWithin1Mile(false);
+
+  //     if (resRoute?.success) {
+  //       setRoute(resRoute.data);
+  //     }
+
+  //     if (res?.success) {
+  //       setTimeEntry(res.data || []);
+  //       setClockedIn(true); // <- live feed starts via effect
+  //       await createNotification(
+  //         'New Clock In',
+  //         `${profile?.first_name} ${profile?.last_name?.[0]}. has clocked in`,
+  //       );
+  //       run(); // fetch route/stops
+  //     } else {
+  //       Alert.alert('Clock in failed', res?.message || 'Try again.');
+  //     }
+  //   } catch (e: any) {
+  //     Alert.alert('Clock in failed', e?.message || 'Try again.');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   /* ─────────────── derived (filtering) ─────────────── */
 
   const filteredDrivers = useMemo(() => {
     const list = driversWithLive;
-    console.log('list', list);
     const q = query.trim().toLowerCase();
     return list.filter(d => {
       const fullName = [
@@ -354,8 +532,8 @@ export default function DriversScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.post('/invites/delete', { inviteId: inv.id });
-              setInvites(prev => prev.filter(x => x.id !== inv.id));
+              await deleteInvite(inv.id);
+              await fetchInvites();
               Alert.alert('Invite deleted', 'The invite record was removed.');
             } catch (e: any) {
               Alert.alert(
@@ -448,97 +626,19 @@ export default function DriversScreen() {
       </View>
     );
   }
-
-  /* ─────────────── action menu (drivers) ─────────────── */
-  const ActionMenu = () => {
-    if (!actionDriver) return null;
-    return (
-      <Modal
-        visible={!!actionDriver}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setActionDriver(null)}
-      >
-        <View style={tw`flex-1 bg-black/40`}>
-          <View
-            style={[
-              tw`mt-auto rounded-t-3xl p-4`,
-              { backgroundColor: colors.main },
-            ]}
-          >
-            <Text
-              style={[tw`text-xl font-semibold mb-3`, { color: colors.text }]}
-            >
-              Actions
-            </Text>
-
-            <SheetButton
-              label="View Profile"
-              onPress={() => {
-                onOpenProfile(actionDriver);
-                setActionDriver(null);
-              }}
-              colors={colors}
-            />
-            <SheetButton
-              label="Call Driver"
-              onPress={() => {
-                onCall(actionDriver);
-                setActionDriver(null);
-              }}
-              colors={colors}
-              LeftIcon={Phone}
-            />
-            <SheetButton
-              label="Assign to Route"
-              onPress={() => {
-                setActionDriver(null);
-                nav.navigate('AssignDriverToRoute', {
-                  driverId: actionDriver.id,
-                });
-              }}
-              colors={colors}
-            />
-            <SheetButton
-              label="Deactivate"
-              onPress={() => {
-                setActionDriver(null);
-                nav.navigate('DeactivateDriver', { driverId: actionDriver.id });
-              }}
-              colors={colors}
-              danger
-            />
-
-            <TouchableOpacity
-              onPress={() => setActionDriver(null)}
-              style={[
-                tw`mt-2 px-4 py-3 rounded-2xl items-center`,
-                { backgroundColor: colors.border },
-              ]}
-            >
-              <Text style={{ color: colors.text }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
   /* ─────────────── render ─────────────── */
-
-  console.log('filteredDrivers', filteredDrivers);
 
   return (
     <View style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
       {/* Header + Tabs */}
       <View style={tw`px-4 pt-4 pb-2 w-full`}>
-        <Text style={[tw`text-2xl font-bold mb-3`, { color: colors.text }]}>
+        <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
           Drivers
         </Text>
       </View>
 
       <View style={tw`px-4 w-full mb-4`}>
-        <View style={tw`flex-row bg-black/20 rounded-xl`}>
+        <View style={tw`flex-row bg-black/20 rounded-xl p-1`}>
           {(['drivers', 'invites'] as const).map(k => {
             const active = tab === k;
             return (
@@ -728,7 +828,7 @@ export default function DriversScreen() {
                     }
                     style={[
                       tw`flex-row items-center px-2 py-2 mb-2 mt-2 rounded-xl`,
-                      { backgroundColor: colors.main },
+                      { backgroundColor: colors.card },
                     ]}
                   >
                     {/* presence + avatar */}
@@ -852,7 +952,7 @@ export default function DriversScreen() {
                             </TouchableOpacity>
                           ) : null}
                           <TouchableOpacity
-                            onPress={() => setActionDriver(item)}
+                            onPress={() => handleSelectedDriver(item)}
                             style={[
                               tw`p-2 rounded-lg`,
                               { backgroundColor: colors.border },
@@ -1055,12 +1155,6 @@ export default function DriversScreen() {
                         colors={colors}
                       />
                       <SmallBtn
-                        label="Revoke"
-                        onPress={() => handleRevoke(item)}
-                        colors={colors}
-                        danger
-                      />
-                      <SmallBtn
                         label="Delete"
                         onPress={() => handleDelete(item)}
                         colors={colors}
@@ -1084,7 +1178,130 @@ export default function DriversScreen() {
         )}
       </View>
 
-      <ActionMenu />
+      <Modal visible={showActionModal} transparent animationType="fade">
+        <View style={tw`flex-1 bg-black/40`}>
+          <View
+            style={[
+              tw`mt-auto rounded-t-3xl p-4 pb-8`,
+              { backgroundColor: colors.main },
+            ]}
+          >
+            <Text
+              style={[tw`text-xl font-semibold mb-3`, { color: colors.text }]}
+            >
+              Actions
+            </Text>
+
+            <SheetButton
+              label="View Profile"
+              onPress={() => {
+                nav.navigate('DriverOverview', {
+                  profileId: actionDriver.profile_id,
+                });
+                setActionDriver(null);
+              }}
+              colors={colors}
+            />
+            <SheetButton
+              label="Call Driver"
+              onPress={() => {
+                onCall(actionDriver);
+                setActionDriver(null);
+              }}
+              colors={colors}
+              LeftIcon={Phone}
+            />
+            {actionTimeSheet &&
+            actionTimeSheet?.clock_in &&
+            !actionTimeSheet?.clock_out ? (
+              <SheetButton
+                label="Force Clock Out"
+                onPress={() => {
+                  Alert.alert(
+                    'Force Clock Out',
+                    'Are you sure you want to force clock out?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Clock Out',
+                        style: 'destructive',
+                        onPress: () => {
+                          handleForceClockOut();
+                        },
+                      },
+                    ],
+                  );
+                }}
+                colors={colors}
+              />
+            ) : !actionTimeSheet ? (
+              <SheetButton
+                label="Force Clock In"
+                onPress={() => {
+                  console.log('clock in actionDriver', actionDriver);
+                  Alert.alert(
+                    'Force Clock In',
+                    'Are you sure you want to force clock in?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Clock In',
+                        style: 'destructive',
+                        onPress: () => {
+                          handleForceClockIn(actionDriver);
+                        },
+                      },
+                    ],
+                  );
+                }}
+                colors={colors}
+              />
+            ) : actionTimeSheet &&
+              actionTimeSheet?.clock_out &&
+              actionTimeSheet?.clock_in ? (
+              <SheetButton
+                label="Force Undo Clock Out"
+                onPress={() => {
+                  console.log('clock in actionDriver', actionDriver);
+                  Alert.alert(
+                    'Force Undo Clock Out',
+                    'Are you sure you want to force clock in?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Undo Clock Out',
+                        style: 'destructive',
+                        onPress: () => {
+                          handleForceUndoClockOut();
+                        },
+                      },
+                    ],
+                  );
+                }}
+                colors={colors}
+              />
+            ) : null}
+            <SheetButton
+              label="Deactivate"
+              onPress={() => {
+                setActionDriver(null);
+              }}
+              colors={colors}
+              danger
+            />
+
+            <TouchableOpacity
+              onPress={() => setShowActionModal(false)}
+              style={[
+                tw`mt-2 px-4 py-3 rounded-2xl items-center`,
+                { backgroundColor: colors.border },
+              ]}
+            >
+              <Text style={{ color: colors.text }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1171,15 +1388,12 @@ function EmptyListState({
 }
 
 function StatusPill({ status, colors }: { status: DriverStatus; colors: any }) {
-  console.log('status', status);
   const map = {
     on_route: { text: 'en_route', bg: '#10B981' },
     available: { text: 'available', bg: '#3B82F6' },
     off_duty: { text: 'off_duty', bg: '#9CA3AF' },
     pending: { text: 'pending', bg: '#F59E0B' },
   };
-  console.log('map', map);
-  console.log('map[status]', map[status]);
   return (
     <View
       style={[

@@ -19,7 +19,7 @@ export default function SelectInput(props: any) {
   } = props;
   return (
     <View style={[flex ? tailwind`flex-1` : undefined, tailwind`mb-3`]}>
-      <Text style={tailwind`text-gray-400 text-xs mb-1`}>
+      <Text style={[tailwind`text-xs mb-1`, { color: colors.textSecondary }]}>
         {label}
         {required && <Text style={tailwind`text-red-500`}>*</Text>}
       </Text>

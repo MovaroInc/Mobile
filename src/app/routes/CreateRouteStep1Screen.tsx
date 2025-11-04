@@ -304,7 +304,7 @@ export default function CreateRouteStep1Screen() {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${day}-${m}`;
+    return `${y}-${m}-${day}`;
   }
 
   const onNext = async () => {
@@ -340,43 +340,8 @@ export default function CreateRouteStep1Screen() {
 
     const draft = await createDraftRoute(payload);
 
-    console.log('draft', draft);
     setLoading(false);
     if (draft.success) {
-      if (startBase) {
-        const payload = {
-          route_id: draft.data.id,
-          business_id: business.id,
-          stop_type: 'base', // backend can treat as Base/HQ type
-          depot_role: 'start', // optional: mark as return-to-base
-          customer_id: business.customer_id ?? null,
-          driver_id: selectedDriver?.Profile?.id ?? null,
-          employee_id: selectedDriver?.id ?? null,
-          vendor_id: null,
-          address_line1: business.address_line1 ?? '',
-          address_line2: business.address_line2 ?? null,
-          city: business.city ?? '',
-          region: business.region ?? '',
-          postal_code: business.postal_code ?? null,
-          country_code: business.country_code ?? 'US',
-          latitude: business.latitude ?? null,
-          longitude: business.longitude ?? null,
-          status: 'scheduled',
-          contact_name:
-            `${selectedDriver?.Profile?.first_name} ${selectedDriver?.Profile?.last_name}` ??
-            'Unknown Driver',
-          contact_phone: selectedDriver?.Profile?.phone ?? '',
-          contact_email: selectedDriver?.Profile?.email ?? '',
-          business_name: business.name ?? 'Unknown Business',
-          sequence: 1, // append
-          is_lunch: false,
-          expected_duration: 60,
-          auto_trigger: false,
-        };
-
-        const res = await createStop(payload);
-        console.log('createStop', res);
-      }
       await notifyRouteDraftCreated({
         businessId: business!.id,
         routeId: draft.data.id,

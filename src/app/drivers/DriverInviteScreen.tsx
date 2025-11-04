@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import tw from 'twrnc';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { useNavigation, useTheme } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { useSession } from '../../state/useSession';
 import {
   validateEmailField,
@@ -22,6 +22,8 @@ import {
 } from '../../shared/lib/validators';
 import { inviteDriver } from '../../shared/lib/InviteHelpers';
 import { CreateInbox } from '../../shared/lib/inboxHelpers';
+import { ArrowLeft, ChevronLeft } from 'react-native-feather';
+import { useTheme } from '../../shared/hooks/useTheme';
 
 type Form = {
   firstName: string;
@@ -93,18 +95,15 @@ export default function DriverInviteScreen() {
   }, [form, emailValid, phoneValid, emailTaken, usernameTaken]);
 
   useEffect(() => {
-    console.log('validatingEmail', form.email);
     validatingEmail(form.email);
   }, [form.email]);
 
   useEffect(() => {
-    console.log('validatingUsername', form.username);
     validatingUsername(form.username);
   }, [form.username]);
 
   const validatingEmail = async (email: string) => {
     const { valid, error } = await validateEmailField(email);
-    console.log('validatingEmail', valid, error);
     if (error) throw error;
     setEmailTaken(!valid);
   };
@@ -181,7 +180,6 @@ export default function DriverInviteScreen() {
 
       try {
         const res = await CreateInbox(inboxPayload);
-        console.log('res', res);
       } catch (e) {
         // Soft-fail: don’t block UX if inbox write fails
         console.log('CreateInbox failed:', e);
@@ -208,10 +206,21 @@ export default function DriverInviteScreen() {
       behavior={Platform.select({ ios: 'padding', android: undefined })}
       style={[tw`flex-1 px-4 pt-4`, { backgroundColor: colors.bg }]}
     >
-      <Text style={tw`text-white text-2xl font-semibold mb-2`}>
-        Invite Driver
-      </Text>
-      <Text style={tw`text-gray-400 mb-6`}>
+      <View style={tw`flex-row items-center`}>
+        <TouchableOpacity
+          onPress={() => nav.goBack()}
+          style={[tw`p-2 rounded-lg mr-2`, { backgroundColor: colors.border }]}
+        >
+          <ArrowLeft width={18} height={18} color={colors.text} />
+        </TouchableOpacity>
+        <Text
+          style={[tw`text-2xl font-bold`, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          Invite Driver
+        </Text>
+      </View>
+      <Text style={[tw`mb-6 mt-3`, { color: colors.text }]}>
         Collect the driver’s basic details. We’ll send them an invite to
         complete setup.
       </Text>
@@ -221,9 +230,9 @@ export default function DriverInviteScreen() {
       >
         {/* Role (fixed) */}
         <View style={tw`flex-row items-center mb-4`}>
-          <Text style={tw`text-gray-300 mr-2`}>Role:</Text>
+          <Text style={[tw`mr-2`, { color: colors.text }]}>Role:</Text>
           <View style={tw`py-1`}>
-            <Text style={tw`text-blue-300 font-bold`}>Driver</Text>
+            <Text style={tw`text-sky-600 font-bold`}>Driver</Text>
           </View>
         </View>
 
@@ -332,9 +341,12 @@ export default function DriverInviteScreen() {
             </Text>
             <TouchableOpacity
               onPress={handleGenerateCode}
-              style={tw`px-3 py-1 rounded-lg bg-blue-600/20 border border-blue-600`}
+              style={[
+                tw`px-3 py-1 rounded-lg border border-sky-600`,
+                { backgroundColor: colors.accent },
+              ]}
             >
-              <Text style={tw`text-blue-300`}>Generate</Text>
+              <Text style={tw`text-white`}>Generate</Text>
             </TouchableOpacity>
           </View>
           <Field
@@ -357,13 +369,13 @@ export default function DriverInviteScreen() {
       <TouchableOpacity
         onPress={handleSubmit}
         disabled={!canSubmit || submitting}
-        style={tw.style(
-          `mt-4 rounded-2xl py-3 items-center`,
-          canSubmit && !submitting ? `bg-[#005ad0]` : `bg-[#1a2a3b]`,
-        )}
+        style={tw.style(`mt-4 rounded-2xl py-3 items-center`, {
+          backgroundColor:
+            canSubmit && !submitting ? colors.brand.primary : colors.inactive,
+        })}
       >
         {submitting ? (
-          <ActivityIndicator />
+          <ActivityIndicator size="small" color="white" />
         ) : (
           <Text style={tw`text-white font-semibold`}>Send Invite</Text>
         )}
@@ -410,7 +422,9 @@ function Field(props: {
   return (
     <View style={tw.style(`mb-4`, containerStyle)}>
       <View style={tw`flex-row justify-between items-end mb-1`}>
-        <Text style={tw`text-gray-300`}>{label}</Text>
+        <Text style={[{ color: colors.textSecondary }, tw`text-xs`]}>
+          {label}
+        </Text>
         {right}
       </View>
       <TextInput
@@ -421,10 +435,11 @@ function Field(props: {
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         style={[
-          tw`text-white rounded-xl px-3 py-3 border`,
+          tw` rounded-xl px-3 py-3 border`,
           {
             borderColor: error ? '#ef4444' : colors.border,
-            backgroundColor: colors.bg,
+            backgroundColor: colors.card,
+            color: colors.text,
           },
         ]}
         multiline={multiline}

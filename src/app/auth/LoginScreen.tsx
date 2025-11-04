@@ -38,9 +38,6 @@ const LoginScreen = () => {
         password,
       });
 
-      console.log('login data', data);
-      console.log('loginerror', error);
-
       if (error) {
         const code = (error as any)?.code;
         const isUnverified = code === 'email_not_confirmed';

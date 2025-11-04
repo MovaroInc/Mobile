@@ -17,6 +17,7 @@ import {
   Plus,
   Camera,
   X,
+  ArrowLeft,
 } from 'react-native-feather';
 import { useTheme } from '../../shared/hooks/useTheme';
 import {
@@ -34,6 +35,7 @@ import {
   updateStop,
 } from '../../shared/lib/StopsHelpers';
 import { useSession } from '../../state/useSession';
+import tw from 'twrnc';
 type imageItem = {
   public_url: string;
   file: any;
@@ -62,27 +64,9 @@ const AddStopScreen3 = () => {
     'invoice',
   );
 
-  useLayoutEffect(() => {
-    (async () => {
-      const step1PayloadStored = await AsyncStorage.getItem('step1Payload');
-      console.log('step1PayloadStored', step1PayloadStored);
-      const oneTimeIdStored = await AsyncStorage.getItem('oneTimeId');
-      console.log('oneTimeIdStored', oneTimeIdStored);
-      const selectedUseStored = await AsyncStorage.getItem('selectedUse');
-      console.log('selectedUseStored', selectedUseStored);
-      const step1OneTimePayloadStored = await AsyncStorage.getItem(
-        'step1OneTimePayload',
-      );
-      console.log('step1OneTimePayloadStored', step1OneTimePayloadStored);
-      const step2PayloadStored = await AsyncStorage.getItem('step2Payload');
-      console.log('step2PayloadStored', step2PayloadStored);
-    })();
-  }, []);
-
   const openSelectedPicker = (category: 'invoice' | 'other', index: number) => {
     setSelectedCategory(category);
     setSelectedIndex(index);
-    console.log('selectedIndex', index);
     setShowImageTypePicker(true);
   };
 
@@ -218,15 +202,11 @@ const AddStopScreen3 = () => {
     }
   };
 
-  useEffect(() => {
-    console.log('invoiceImages', invoiceImages);
-    console.log('otherImages', otherImages);
-  }, [invoiceImages, otherImages]);
-
   const handleSubmit = async () => {
     setLoading(true);
     const stored1Payload = await AsyncStorage.getItem('step1Payload');
     const payload1 = JSON.parse(stored1Payload || '{}');
+    console.log('payload1', payload1);
     const stored2Payload = await AsyncStorage.getItem('step2Payload');
     const payload2 = JSON.parse(stored2Payload || '{}');
     const storedOneTimeId = await AsyncStorage.getItem('oneTimeId');
@@ -257,7 +237,6 @@ const AddStopScreen3 = () => {
       one_time_id: storedSelectedUse === 'one_time' ? oneTimeId : null,
     };
     const resStop = await createStop(reqPayloads);
-    console.log('resStop', resStop.data);
     const stopId = resStop.data.id;
     const r = payload2?.requirements || payload2?.stop_requirements || null;
     if (r) {
@@ -321,6 +300,7 @@ const AddStopScreen3 = () => {
           byte_size: img.file.size,
           width: img.file.width,
           height: img.file.height,
+          source: 'admin',
         });
         console.log('resInvoice', resInvoice);
       });
@@ -354,18 +334,21 @@ const AddStopScreen3 = () => {
   return (
     <View style={[tailwind`flex-1`, { backgroundColor: colors.bg }]}>
       {/* Header */}
-      <View style={tailwind`px-2 pt-4 pb-3 flex-row items-center`}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <ChevronLeft width={24} height={24} color={colors.text} />
+      <View style={tw`px-4 pt-4 pb-2 flex-row items-center`}>
+        <TouchableOpacity
+          onPress={() => nav.goBack()}
+          style={[tw`p-2 rounded-lg mr-2`, { backgroundColor: colors.button }]}
+        >
+          <ArrowLeft width={18} height={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <View style={tailwind`pl-2`}>
-          <Text style={[tailwind`text-2xl font-bold`, { color: colors.text }]}>
-            Stop Photos
-          </Text>
-          <Text style={[tailwind`text-2xs mt-0.5`, { color: colors.muted }]}>
-            Step 3 of 3 — Invoice & additional photos
-          </Text>
-        </View>
+        <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
+          Add New Stop
+        </Text>
+      </View>
+      <View style={tw`px-4 pb-4`}>
+        <Text style={[tw`text-xs`, { color: colors.muted }]}>
+          Step 3 of 3 — Invoice & additional photos
+        </Text>
       </View>
       <ScrollView contentContainerStyle={tailwind`px-4 pb-10`}>
         <Section
@@ -443,19 +426,23 @@ const AddStopScreen3 = () => {
           </View>
         </View>
       </Modal>
-      <TouchableOpacity
-        onPress={handleSubmit}
-        style={[
-          tailwind`mt-2 px-4 py-3 rounded-2xl items-center`,
-          { backgroundColor: colors.brand?.primary || '#2563eb' },
-        ]}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color={'white'} />
-        ) : (
-          <Text style={[tailwind`text-white font-semibold`]}>Create Stop</Text>
-        )}
-      </TouchableOpacity>
+      <View style={tw`px-4 mb-4`}>
+        <TouchableOpacity
+          onPress={handleSubmit}
+          style={[
+            tailwind`mt-2 px-4 py-3 rounded-2xl items-center`,
+            { backgroundColor: colors.brand?.primary || '#2563eb' },
+          ]}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color={'white'} />
+          ) : (
+            <Text style={[tailwind`text-white font-semibold`]}>
+              Create Stop
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };

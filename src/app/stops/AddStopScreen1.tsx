@@ -40,6 +40,7 @@ import {
   Search as SearchIcon,
   X as CloseIcon,
   Check as CheckIcon,
+  ArrowLeft,
 } from 'react-native-feather';
 
 import Field from '../../shared/components/inputs/Field';
@@ -276,7 +277,7 @@ export default function AddStopScreen1() {
         try {
           setLoadingVendors(true);
           const respV = await grabVendors(business.id);
-          setVendors(respV);
+          setVendors(respV.data);
         } catch {
           setVendors([]);
         } finally {
@@ -421,7 +422,7 @@ export default function AddStopScreen1() {
       const payload = {
         route_id: routeId,
         business_id: business.id,
-        stop_type: 'baae',
+        stop_type: 'base',
         depot_role: 'start',
         customer_id: null,
         vendor_id: null,
@@ -458,6 +459,57 @@ export default function AddStopScreen1() {
       Alert.alert('Error', e?.message ?? 'Failed to create base stop.');
     } finally {
       setCreatingBase(false);
+    }
+  };
+
+  const handleSelectedStopType = (stopTypeSent: string) => {
+    setStopType(stopTypeSent);
+    if (stopTypeSent === 'Lunch') {
+      setLunchMinutes(30);
+      setLunchAuto(false);
+    }
+    if (stopTypeSent === 'Other') {
+      setStopUse([
+        { key: 'customer', label: 'Customer', Icon: UsersIcon },
+        { key: 'vendor', label: 'Vendor', Icon: VendorIcon },
+        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
+      ]);
+      setSelectedUse('customer');
+    }
+    if (stopTypeSent === 'Delivery') {
+      setStopUse([
+        { key: 'customer', label: 'Customer', Icon: UsersIcon },
+        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
+      ]);
+      setSelectedUse('customer');
+    }
+    if (stopTypeSent === 'Pickup') {
+      setStopUse([
+        { key: 'vendor', label: 'Vendor', Icon: VendorIcon },
+        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
+      ]);
+      setSelectedUse('vendor');
+    }
+    if (stopTypeSent === 'Service') {
+      setStopUse([
+        { key: 'customer', label: 'Customer', Icon: UsersIcon },
+        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
+      ]);
+      setSelectedUse('customer');
+    }
+    if (stopTypeSent === 'Install') {
+      setStopUse([
+        { key: 'customer', label: 'Customer', Icon: UsersIcon },
+        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
+      ]);
+      setSelectedUse('customer');
+    }
+    if (stopTypeSent === 'Repair') {
+      setStopUse([
+        { key: 'customer', label: 'Customer', Icon: UsersIcon },
+        { key: 'one_time', label: 'One-time', Icon: OneTimeIcon },
+      ]);
+      setSelectedUse('customer');
     }
   };
 
@@ -576,13 +628,18 @@ export default function AddStopScreen1() {
       );
     }
 
+    console.log('stopType', stopType);
+    console.log('selectedUse', selectedUse);
+    console.log('selectedCustomer', selectedCustomer);
+    console.log('selectedVendor', selectedVendor);
+
     const currentPayload = {
       route_id: routeId,
       business_id: business?.id,
       stop_type: stopType.toLowerCase(),
       depot_role: null,
-      customer_id: selectedCustomer?.id || null,
-      vendor_id: selectedVendor?.id || null,
+      customer_id: selectedUse === 'customer' ? selectedCustomer?.id : null,
+      vendor_id: selectedUse === 'vendor' ? selectedVendor?.id : null,
       address_line1: isLunch ? '' : line1.trim(),
       address_line2: isLunch ? null : line2.trim() || null,
       city: isLunch ? '' : city.trim(),
@@ -640,15 +697,16 @@ export default function AddStopScreen1() {
       style={[tw`flex-1`, { backgroundColor: colors.bg }]}
     >
       {/* Header */}
-      <View style={tw`px-2 pt-4 pb-2 flex-row items-center`}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <ChevronLeft width={24} height={24} color={colors.text} />
+      <View style={tw`px-4 pt-4 pb-2 flex-row items-center`}>
+        <TouchableOpacity
+          onPress={() => nav.goBack()}
+          style={[tw`p-2 rounded-lg mr-2`, { backgroundColor: colors.button }]}
+        >
+          <ArrowLeft width={18} height={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <View style={tw`pl-2`}>
-          <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            Add Stop
-          </Text>
-        </View>
+        <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
+          Add New Stop
+        </Text>
       </View>
       <View style={tw`px-4 pb-4`}>
         <Text style={[tw`text-xs`, { color: colors.muted }]}>
@@ -688,9 +746,15 @@ export default function AddStopScreen1() {
                     stopType === t ? colors.brand?.primary : colors.border,
                 },
               ]}
-              onPress={() => setStopType(t)}
+              //------------------------------------------
+              onPress={() => handleSelectedStopType(t)}
             >
-              <Text style={[tw`text-sm font-semibold`, { color: colors.text }]}>
+              <Text
+                style={[
+                  tw`text-sm font-semibold`,
+                  { color: stopType === t ? '#fff' : colors.text },
+                ]}
+              >
                 {t}
               </Text>
             </TouchableOpacity>

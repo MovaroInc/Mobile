@@ -29,6 +29,7 @@ import {
   Clipboard,
   Truck as LiftgateIcon,
   Calendar,
+  ArrowLeft,
 } from 'react-native-feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Field from '../../shared/components/inputs/Field';
@@ -258,18 +259,16 @@ export default function StopSummaryEditScreen() {
   return (
     <View style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
       {/* Header */}
-      <View style={tw`px-2 pt-4 pb-3 flex-row items-center`}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <ChevronLeft width={24} height={24} color={colors.text} />
+      <View style={tw`px-4 pt-4 pb-3 flex-row items-center`}>
+        <TouchableOpacity
+          onPress={() => nav.goBack()}
+          style={[tw`p-2 rounded-lg mr-2`, { backgroundColor: colors.button }]}
+        >
+          <ArrowLeft width={18} height={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <View style={tw`pl-2`}>
-          <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            Stop Summary
-          </Text>
-          <Text style={[tw`text-2xs mt-0.5`, { color: colors.muted }]}>
-            Edit sections inline; saves apply immediately.
-          </Text>
-        </View>
+        <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
+          Stop Summary
+        </Text>
       </View>
 
       <ScrollView contentContainerStyle={tw`px-4 pb-28`}>

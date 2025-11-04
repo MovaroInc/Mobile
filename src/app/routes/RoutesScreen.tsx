@@ -36,6 +36,8 @@ import {
   Edit2,
   Plus,
   Trash2,
+  Edit,
+  Edit3,
 } from 'react-native-feather';
 import { buildDateRange } from '../../shared/utils/dates';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -131,16 +133,12 @@ function fmtDateHeader(d: Date, label?: string) {
   return label ? `${label} — ${wd}, ${md}` : `${wd}, ${md}`;
 }
 
-function toHM(mins: number) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h}h ${m}m`;
+function todayLocalYYYYMMDD(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
-
-const convertToYYYYMMDD = (date: string) => {
-  const [day, month, year] = date.split('/');
-  return `${year}-${month}-${day}`;
-};
 
 /* ────────────────────────── Screen ─────────────────────────── */
 
@@ -156,13 +154,10 @@ export default function RouteScreen() {
   const initialIso =
     items.find(i => i.iso === todayLocalISO)?.iso ?? items[0].iso;
 
-  const [selectedIso, setSelectedIso] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [selectedIso, setSelectedIso] = useState();
 
-  const [selectedDate, setSelectedDate] = useState(
-    convertToYYYYMMDD(new Date().toLocaleDateString()),
-  );
+  const today = todayLocalYYYYMMDD();
+  const [selectedDate, setSelectedDate] = useState(today);
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -170,21 +165,10 @@ export default function RouteScreen() {
   const [draftRoutes, setDraftRoutes] = useState<DBRoute[]>([]);
   const [drivers, setDrivers] = useState<UiDriver[]>([]);
 
-  const testNotification = async () => {
-    console.log('profile', profile);
-    console.log('os', Platform.OS);
-    const payload = {
-      title: 'Test Notification',
-      body: 'This is a test notification',
-      data: 'This is notification data',
-      token: profile?.device[0]?.apns_token,
-      token_type: Platform.OS,
-      sendAt: 1000,
-    };
-    await sendNotification(payload);
-  };
+  useEffect(() => {
+    fetchRoutes();
+  }, [selectedIso, selectedDate]);
 
-  // Load drivers + routes when business/date changes
   useFocusEffect(
     useCallback(() => {
       fetchRoutes();
@@ -200,9 +184,7 @@ export default function RouteScreen() {
       setDrivers(drvRes?.data);
 
       // routes (normalize shapes + dates)
-      console.log('onRefresh', business.id, selectedDate);
       const rRes = await getRoutesByBusinessId(business.id, selectedDate);
-      console.log('rRes', rRes);
       if (rRes.error) {
         throw new Error('Failed to fetch routes: ' + rRes.error.message);
       }
@@ -210,7 +192,6 @@ export default function RouteScreen() {
         business.id,
         selectedDate,
       );
-      console.log('rResDraft', rResDraft);
       if (rResDraft.error) {
         throw new Error(
           'Failed to fetch draft routes: ' + rResDraft.error.message,
@@ -230,7 +211,6 @@ export default function RouteScreen() {
     if (!profile?.id) return;
     (async () => {
       const apn_token = await AsyncStorage.getItem('@apns_device_token');
-      console.log('[APNSTokenManager] Token saved to AsyncStorage');
       if (profile?.id && apn_token) {
         const payload = {
           apns_token: apn_token,
@@ -255,7 +235,6 @@ export default function RouteScreen() {
   };
 
   const confirmDeleteRoute = async (routeId: number) => {
-    console.log('route id', routeId);
     Alert.alert('Delete Route', 'Are you sure you want to delete this route?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -263,7 +242,6 @@ export default function RouteScreen() {
         style: 'destructive',
         onPress: async () => {
           const response = await deleteRoute(routeId);
-          console.log('deleteRoute response', response);
           if (response.success) {
             fetchRoutes();
           } else {
@@ -367,11 +345,11 @@ export default function RouteScreen() {
               {
                 borderWidth: 1,
                 borderColor: colors.border,
-                backgroundColor: colors.borderSecondary,
+                backgroundColor: colors.button,
               },
             ]}
           >
-            <BarChart2 width={16} height={16} color={colors.text} />
+            <BarChart2 width={16} height={16} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -380,7 +358,7 @@ export default function RouteScreen() {
       <View style={tw`px-3 mb-2`}>
         <View
           style={[
-            tw`flex-row rounded-xl p-1`,
+            tw`flex-row rounded-2 p-1`,
             { backgroundColor: colors.bg ?? colors.main },
           ]}
         >
@@ -389,11 +367,11 @@ export default function RouteScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={[
               tw`flex-row px-.5 py-2 rounded-2`,
-              { backgroundColor: colors.border },
+              { backgroundColor: colors.card },
             ]}
           >
             {items.map(i => {
-              const active = i.iso === selectedIso;
+              const active = i.iso === selectedDate;
               const [dow, mon, day] = i.label.split(' ');
               const monthDay = `${mon} ${day}`;
               return (
@@ -401,11 +379,10 @@ export default function RouteScreen() {
                   key={i.iso}
                   onPress={() => {
                     // i.iso presumed 'YYYY-MM-DD'
-                    setSelectedDate(toYYYY_DD_MM(i.iso)); // => 'YYYY-DD-MM'
-                    setSelectedIso?.(i.iso); // if you track active tab by iso
+                    setSelectedDate(i.iso); // => 'YYYY-DD-MM'
                   }}
                   style={[
-                    tw`px-3 py-2 mx-1 rounded-lg items-center`,
+                    tw`px-3 py-2 mx-1 rounded-2 items-center`,
                     {
                       backgroundColor: active
                         ? colors.brand.primary
@@ -494,10 +471,14 @@ export default function RouteScreen() {
             }
             ListEmptyComponent={
               <View style={tw`flex-1 items-center justify-center`}>
-                <Text style={[tw`text-base mt-2`, { color: colors.muted }]}>
+                <Text
+                  style={[tw`text-base mt-2`, { color: colors.textSecondary }]}
+                >
                   No drivers were found.
                 </Text>
-                <Text style={[tw`text-base mb-2`, { color: colors.muted }]}>
+                <Text
+                  style={[tw`text-base mb-2`, { color: colors.textSecondary }]}
+                >
                   You can add a driver from the drivers screen.
                 </Text>
                 <TouchableOpacity
@@ -549,7 +530,6 @@ export default function RouteScreen() {
                 Drafted Routes
               </Text>
               {draftRoutes.map(r => {
-                console.log('r', JSON.stringify(r, null, 2));
                 const stopsCount = r.stops?.length ?? 0;
                 const durationMin =
                   (r.stops ?? []).reduce(
@@ -574,7 +554,7 @@ export default function RouteScreen() {
                     }
                     style={[
                       tw`mb-3 px-4 py-3 rounded-2xl`,
-                      { backgroundColor: colors.borderSecondary },
+                      { backgroundColor: colors.card },
                     ]}
                   >
                     <View style={tw`flex-row items-center justify-between`}>
@@ -593,7 +573,7 @@ export default function RouteScreen() {
                           style={[
                             tw`ml-2 p-2 border rounded-2`,
                             {
-                              backgroundColor: colors.border,
+                              backgroundColor: colors.button,
                               borderColor: colors.border,
                             },
                           ]}
@@ -612,21 +592,34 @@ export default function RouteScreen() {
                     </View>
 
                     <View style={tw`flex-row items-center mt-2`}>
-                      <Truck width={14} height={14} color="#9CA3AF" />
+                      <Truck width={14} height={14} color={colors.icon} />
                       <Text
-                        style={tw`text-gray-400 text-xs ml-1`}
+                        style={[
+                          tw`text-xs ml-1`,
+                          { color: colors.textSecondary },
+                        ]}
                         numberOfLines={1}
                       >
                         {r.driver?.first_name} {r.driver?.last_name}
                       </Text>
                       <View style={tw`w-3`} />
-                      <Navigation width={14} height={14} color="#9CA3AF" />
-                      <Text style={tw`text-gray-400 text-xs ml-1`}>
+                      <Navigation width={14} height={14} color={colors.icon} />
+                      <Text
+                        style={[
+                          tw`text-xs ml-1`,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         {stopsCount} stops
                       </Text>
                       <View style={tw`w-3`} />
-                      <Clock width={14} height={14} color="#9CA3AF" />
-                      <Text style={tw`text-gray-400 text-xs ml-1`}>
+                      <Clock width={14} height={14} color={colors.icon} />
+                      <Text
+                        style={[
+                          tw`text-xs ml-1`,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         {startHM ? `• ${startHM}` : ''}
                       </Text>
                     </View>
@@ -677,12 +670,14 @@ function SummaryCard({
     <View
       style={[
         tw`flex-1 px-3 py-3 rounded-2xl`,
-        { backgroundColor: colors.borderSecondary },
+        { backgroundColor: colors.card },
       ]}
     >
       <View style={tw`flex-row items-center justify-between`}>
-        <Text style={[tw`text-xs`, { color: '#9CA3AF' }]}>{label}</Text>
-        <Icon width={14} height={14} color={colors.text} />
+        <Text style={[tw`text-xs`, { color: colors.textSecondary }]}>
+          {label}
+        </Text>
+        <Icon width={14} height={14} color={colors.icon} />
       </View>
       <Text style={[tw`text-xl font-bold mt-1`, { color: colors.text }]}>
         {value}
@@ -707,10 +702,7 @@ function DriverRow({
   const [expanded, setExpanded] = useState(false);
   return (
     <View
-      style={[
-        tw`mb-2 px-4 py-3 rounded-2xl`,
-        { backgroundColor: colors.borderSecondary },
-      ]}
+      style={[tw`mb-2 px-4 py-3 rounded-2xl`, { backgroundColor: colors.card }]}
     >
       <View style={tw`flex-row items-center justify-between`}>
         <Text style={[tw`text-lg font-semibold`, { color: colors.text }]}>
@@ -719,29 +711,29 @@ function DriverRow({
         {route ? (
           <TouchableOpacity
             onPress={onOpen}
-            style={[tw`ml-3 p-2 rounded-2`, { backgroundColor: colors.border }]}
+            style={[tw`ml-3 p-2 rounded-2`, { backgroundColor: colors.button }]}
           >
-            <Edit2 width={14} height={14} color={colors.muted} />
+            <Edit3 width={14} height={14} color={colors.textSecondary} />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
             onPress={onCreate}
-            style={[tw`ml-3 p-2 rounded-2`, { backgroundColor: colors.border }]}
+            style={[tw`ml-3 p-2 rounded-2`, { backgroundColor: colors.button }]}
           >
-            <Plus width={14} height={14} color={colors.muted} />
+            <Plus width={14} height={14} color={colors.textSecondary} />
           </TouchableOpacity>
         )}
       </View>
       <View style={tw`flex-row items-center justify-start mt-1`}>
         <View style={tw`flex-row items-center`}>
-          <Mail width={14} height={14} color={colors.muted} />
-          <Text style={[tw`text-xs ml-1`, { color: colors.muted }]}>
+          <Mail width={14} height={14} color={colors.icon} />
+          <Text style={[tw`text-xs ml-1`, { color: colors.textSecondary }]}>
             {driver.Profile?.email}
           </Text>
         </View>
         <View style={tw`flex-row items-center ml-2`}>
-          <Phone width={14} height={14} color={colors.muted} />
-          <Text style={[tw`text-xs ml-1`, { color: colors.muted }]}>
+          <Phone width={14} height={14} color={colors.icon} />
+          <Text style={[tw`text-xs ml-1`, { color: colors.textSecondary }]}>
             {phoneDigits(driver.Profile?.phone)}
           </Text>
         </View>
@@ -767,11 +759,16 @@ function DriverRow({
                   ]}
                 />
               ) : (
-                <View style={tw`w-2 h-2 rounded-full bg-orange-400`} />
+                <View
+                  style={[
+                    tw`w-2 h-2 rounded-full`,
+                    { backgroundColor: colors.supp },
+                  ]}
+                />
               )}
               <View style={tw`flex flex-row items-center`}>
                 <Text
-                  style={tw`text-gray-300 text-base ml-2`}
+                  style={[tw`text-base ml-2`, { color: colors.textSecondary }]}
                   numberOfLines={1}
                 >
                   {route.name} • {route.stops?.length ?? 0} stops
@@ -779,7 +776,8 @@ function DriverRow({
                 <View style={tw`w-2`} />
                 <Text
                   style={[
-                    tw`text-black font-semibold text-xs px-2 py-0.5 rounded-full`,
+                    tw`font-semibold text-xs px-2.5 py-1 rounded-full`,
+                    { color: colors.textOpposite },
                     { backgroundColor: colors.accent },
                   ]}
                 >
@@ -788,13 +786,13 @@ function DriverRow({
               </View>
             </View>
             <TouchableOpacity
-              style={[tw`p-2 rounded-2`, { backgroundColor: colors.border }]}
+              style={[tw`p-2 rounded-2`, { backgroundColor: colors.button }]}
               onPress={() => setExpanded(!expanded)}
             >
               <ChevronDown
                 width={14}
                 height={14}
-                color={colors.muted}
+                color={colors.textSecondary}
                 style={expanded ? { transform: [{ rotate: '180deg' }] } : {}}
               />
             </TouchableOpacity>
@@ -802,7 +800,12 @@ function DriverRow({
         ) : (
           <View style={tw`flex-row items-center mt-1`}>
             <View style={tw`w-2 h-2 rounded-full bg-gray-400`} />
-            <Text style={tw`text-gray-300 text-base ml-2`}>
+            <Text
+              style={[
+                tw`text-gray-300 text-base ml-2`,
+                { color: colors.textSecondary },
+              ]}
+            >
               No dispatched route assigned
             </Text>
           </View>
@@ -813,7 +816,7 @@ function DriverRow({
           <Text style={tw`text-xs`}>
             {route?.stops?.map(s => {
               return (
-                <View style={tw`flex-row items-start`}>
+                <View key={s.id} style={tw`flex-row items-start`}>
                   <View>
                     <View style={tw`w-2 h-2 rounded-full bg-gray-400 mt-2`} />
                     <View style={tw`w-2 rounded-full overflow-hidden py-2`}>
@@ -821,46 +824,94 @@ function DriverRow({
                     </View>
                   </View>
                   <View>
-                    <Text style={tw`text-gray-300 text-base ml-2`}>
-                      {s.business_name} ({s.stop_type}) • {s.status}
-                    </Text>
+                    <View style={tw`flex-row items-center`}>
+                      <Text
+                        style={[
+                          tw`text-base ml-2`,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {s?.business_name} ({s?.stop_type}) •{' '}
+                      </Text>
+                      <View
+                        style={[
+                          tw`px-2 py-1 rounded-full text-xs`,
+                          { backgroundColor: colors.lightaccent },
+                        ]}
+                      >
+                        <Text
+                          style={[tw`text-xs`, { color: colors.textOpposite }]}
+                        >
+                          {s?.status}
+                        </Text>
+                      </View>
+                    </View>
                     <View style={tw`flex-row items-center mt-1 ml-1.5`}>
                       <MapPin width={14} height={14} color={colors.muted} />
-                      <Text style={tw`text-gray-300 text-xs ml-2`}>
-                        {s.address_line1} {s.address_line2} {s.city} {s.region}
+                      <Text
+                        style={[
+                          tw`text-xs ml-2`,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {s?.address_line1} {s?.address_line2} {s?.city}{' '}
+                        {s?.region}
                       </Text>
                     </View>
                     <View style={tw`flex-row items-center mt-2 ml-1.5`}>
                       <Phone width={14} height={14} color={colors.muted} />
-                      <Text style={tw`text-gray-300 text-xs ml-2`}>
-                        {s.contact_phone}
+                      <Text
+                        style={[
+                          tw`text-xs ml-2`,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {s?.contact_phone}
                       </Text>
                     </View>
                     <View style={tw`flex-row items-center mt-2 ml-1`}>
-                      {s.requirements.id_required && (
+                      {s?.requirements?.id_required && (
                         <View style={tw`px-2 py-1 rounded-full bg-gray-700`}>
-                          <Text style={tw`text-xs`}>
-                            {s.requirements.id_required ? 'ID Required' : ''}
+                          <Text
+                            style={[
+                              tw`text-xs`,
+                              { color: colors.textOpposite },
+                            ]}
+                          >
+                            {s?.requirements?.id_required ? 'ID Required' : ''}
                           </Text>
                         </View>
                       )}
-                      {s.requirements.contact_before && (
+                      {s?.requirements?.contact_before && (
                         <View
                           style={tw`px-2 py-1 rounded-full bg-gray-700 ml-2`}
                         >
-                          <Text style={tw`text-xs`}>
-                            {s.requirements.contact_before
+                          <Text
+                            style={[
+                              tw`text-xs`,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {s?.requirements?.contact_before
                               ? 'Contact Before'
                               : ''}
                           </Text>
                         </View>
                       )}
-                      {s.requirements.contactless && (
+                      {s?.requirements?.contactless && (
                         <View
-                          style={tw`px-2 py-1 rounded-full bg-gray-700 ml-2`}
+                          style={[
+                            tw`px-2 py-1 rounded-full ml-2`,
+                            { backgroundColor: colors.cardSecondary },
+                          ]}
                         >
-                          <Text style={tw`text-xs`}>
-                            {s.requirements.contactless ? 'Contactless' : ''}
+                          <Text
+                            style={[
+                              tw`text-xs`,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {s?.requirements?.contactless ? 'Contactless' : ''}
                           </Text>
                         </View>
                       )}
@@ -906,9 +957,9 @@ function StatusPill({ status, colors }: { status: RouteStatus; colors: any }) {
       style={[
         tw`px-2 py-0.5 rounded-full`,
         {
-          backgroundColor: bg,
+          backgroundColor: colors.bg,
           borderWidth: 0.5,
-          borderColor: 'rgba(255,255,255,0.15)',
+          borderColor: colors.border,
         },
       ]}
     >

@@ -26,7 +26,10 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../../shared/hooks/useTheme';
 import { useSession } from '../../state/useSession';
-import { GetInboxByBusinessId } from '../../shared/lib/inboxHelpers';
+import {
+  GetInboxByBusinessId,
+  MarkInboxAsRead,
+} from '../../shared/lib/inboxHelpers';
 
 // ───────────────── types ─────────────────
 type Severity = 'low' | 'medium' | 'high';
@@ -173,13 +176,7 @@ export default function InboxScreen() {
       if (!res?.success)
         throw new Error(res?.message || 'Failed to load inbox');
       const rows = Array.isArray(res.data) ? res.data : [];
-      const mapped = rows.map(mapRowToItem);
-      // newest first
-      mapped.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      );
-      setItems(mapped);
+      setItems(rows);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to load inbox.');
     } finally {
@@ -199,8 +196,13 @@ export default function InboxScreen() {
 
   const markAllRead = useCallback(() => {
     // TODO: hit your API to mark-all-read for this business/profile
-    setItems(prev => prev.map(x => ({ ...x, read: true })));
-  }, []);
+    // setItems(prev => prev.map(x => ({ ...x, read: true })));
+    console.log('items', items);
+    items.forEach(item => {
+      MarkInboxAsRead(item.event.id, item.id);
+    });
+    load();
+  }, [items]);
 
   const handleResolve = useCallback((id: string) => {
     // TODO: POST /inbox/:eventId/resolve { resolution_state: 'resolved' }
@@ -405,8 +407,8 @@ export default function InboxScreen() {
               item={item}
               colors={colors}
               onOpen={() => handleOpen(item)}
-              onResolve={() => handleResolve(item.id)}
-              onSnooze={() => handleSnooze(item.id)}
+              onResolve={() => handleResolve(item.event.id)}
+              onSnooze={() => handleSnooze(item.event.id)}
             />
           )}
         />
@@ -464,19 +466,37 @@ function InboxRow({
             { backgroundColor: sev.bg },
           ]}
         >
-          {iconFor(item.kind, leftIconColor)}
+          {item.event.actor === 'owner_app' ? (
+            <User width={16} height={16} color={colors.text} />
+          ) : (
+            <Truck width={16} height={16} color={colors.text} />
+          )}
         </View>
 
         {/* Text */}
         <View style={tw`flex-1`}>
           <View style={tw`flex-row items-start`}>
-            {dot}
             <Text
               style={[tw`flex-1 text-sm font-semibold`, { color: colors.text }]}
               numberOfLines={2}
             >
-              {item.title}
+              {item.event.title}
             </Text>
+            <View
+              style={[
+                tw`flex-row items-center py-1 px-3 rounded-full`,
+                {
+                  backgroundColor:
+                    item.event.status === 'read'
+                      ? colors.button
+                      : colors.brand.primary,
+                },
+              ]}
+            >
+              <Text style={[tw`text-xs font-semibold text-white`]}>
+                {item.event.status}
+              </Text>
+            </View>
           </View>
 
           {!!item.subtitle && (
@@ -484,33 +504,39 @@ function InboxRow({
               style={[tw`text-xs mt-1`, { color: colors.muted }]}
               numberOfLines={2}
             >
-              {item.subtitle}
+              {item.event.subtitle}
             </Text>
           )}
 
           <View style={tw`flex-row items-center mt-2`}>
             <Clock width={12} height={12} color={colors.muted} />
             <Text style={[tw`text-2xs ml-1`, { color: colors.muted }]}>
-              {timeAgo(item.created_at)}
+              {timeAgo(item.event.created_at)}
             </Text>
           </View>
 
           {/* Actions */}
           <View style={tw`flex-row mt-2`}>
-            <SmallBtn
+            {/* <SmallBtn
               label="Open"
               onPress={onOpen}
               colors={colors}
               Left={<ChevronsRight width={14} height={14} color="#fff" />}
               primary
-            />
-            <SmallBtn
-              label="Resolve"
-              onPress={onResolve}
-              colors={colors}
-              Left={<CheckCircle width={14} height={14} color={colors.text} />}
-            />
-            <SmallBtn label="Snooze" onPress={onSnooze} colors={colors} />
+            /> */}
+            {item.event.status === 'read' ? null : (
+              <SmallBtn
+                label="Resolve"
+                onPress={onResolve}
+                colors={colors}
+                Left={
+                  <CheckCircle width={14} height={14} color={colors.text} />
+                }
+              />
+            )}
+            {item.event.status === 'read' ? null : (
+              <SmallBtn label="Snooze" onPress={onSnooze} colors={colors} />
+            )}
           </View>
         </View>
       </View>

@@ -18,15 +18,10 @@ import {
   Alert,
 } from 'react-native';
 import tw from 'twrnc';
-import {
-  useNavigation,
-  useRoute,
-  RouteProp,
-  useTheme,
-} from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Linking } from 'react-native';
 import { supabase } from '../../api/supabase';
-import { ChevronLeft } from 'react-native-feather';
+import { ArrowLeft, ChevronLeft } from 'react-native-feather';
 import {
   getInviteByAccessCode,
   updateInviteWIthAccepted,
@@ -45,6 +40,7 @@ import { getSubscriptionByBusinessId } from '../../shared/lib/SubscriptionHelper
 import { grabCurrentLocation } from '../../shared/lib/locations';
 import { CreateInbox } from '../../shared/lib/inboxHelpers';
 import { sendNotification } from '../../shared/lib/notifications';
+import { useTheme } from '../../shared/hooks/useTheme';
 
 type RootStackParamList = {
   DriverSignup: { inviteId?: string } | undefined;
@@ -232,7 +228,6 @@ export default function DriverSignupScreen() {
     if (error) {
       Alert.alert('Error', error.message);
     }
-    console.log('subscription', data[0]);
     setSubscription(data[0]);
   };
 
@@ -282,7 +277,6 @@ export default function DriverSignupScreen() {
     // NOTE: The original code used 'invite.business_id', but the context was 'business.id'.
     // I'm using 'invite.business_id' as provided in your prompt, but verify this is correct.
     const admin = await getBusinessAdmin(invite.business_id ?? 0);
-    console.log('admin list', admin);
 
     if (admin.data.length > 0) {
       // 1. FILTER: First, filter the admin data to only include those with a valid apns_token.
@@ -294,7 +288,6 @@ export default function DriverSignupScreen() {
 
       // 2. MAP: Then, create an array of Promises only for the filtered admins.
       const sendPromises = adminsWithToken.map(async (a: any) => {
-        console.log('admin found', a);
         const token = a.profile.device[0].apns_token;
 
         const payload = {
@@ -328,7 +321,6 @@ export default function DriverSignupScreen() {
 
     try {
       setSubmitting(true);
-      console.log('subscription', subscription);
 
       const { data, error } = await createUserAccount(
         email,
@@ -352,8 +344,6 @@ export default function DriverSignupScreen() {
         Alert.alert('Error', error.message);
         return;
       }
-
-      console.log('create account data', data);
 
       const { data: employeeData, error: employeeError } =
         await createEmployeeAccount(
@@ -434,15 +424,24 @@ export default function DriverSignupScreen() {
       style={[tw`flex-1`, { backgroundColor: colors.bg }]}
     >
       <View style={tw`px-4 pt-4 pb-2`}>
-        <View style={tw`flex-row items-center gap-2`}>
-          <TouchableOpacity onPress={() => nav.goBack()}>
-            <ChevronLeft color={colors.text} height={24} width={24} />
+        <View style={tw`flex-row items-center`}>
+          <TouchableOpacity
+            onPress={() => nav.goBack()}
+            style={[
+              tw`p-2 rounded-lg mr-2`,
+              { backgroundColor: colors.border },
+            ]}
+          >
+            <ArrowLeft width={18} height={18} color={colors.text} />
           </TouchableOpacity>
-          <Text style={tw`text-white text-2xl font-semibold mb-2`}>
+          <Text
+            style={[tw`text-2xl font-bold`, { color: colors.text }]}
+            numberOfLines={1}
+          >
             Sign up as Driver
           </Text>
         </View>
-        <Text style={tw`text-gray-400 mb-6`}>
+        <Text style={[tw`mb-6 mt-3`, { color: colors.text }]}>
           Your details were shared by your manager. Confirm and create your
           password to finish.
         </Text>
@@ -469,6 +468,7 @@ export default function DriverSignupScreen() {
                   <Text style={tw`text-red-400`}>invalid</Text>
                 ) : undefined
               }
+              required={true}
               error={codeError || undefined}
             />
           )}
@@ -492,6 +492,7 @@ export default function DriverSignupScreen() {
                   placeholder="First name"
                   containerStyle={tw`flex-1`}
                   error={!nonEmpty(firstName) ? 'Required' : undefined}
+                  required={true}
                 />
                 <Field
                   label="Last name"
@@ -500,6 +501,7 @@ export default function DriverSignupScreen() {
                   placeholder="Last name"
                   containerStyle={tw`flex-1`}
                   error={!nonEmpty(lastName) ? 'Required' : undefined}
+                  required={true}
                 />
               </View>
 
@@ -514,6 +516,7 @@ export default function DriverSignupScreen() {
                     ? 'Must be 8+ chars, include a letter and a number'
                     : undefined
                 }
+                required={true}
               />
               <Field
                 label="Confirm password"
@@ -526,6 +529,7 @@ export default function DriverSignupScreen() {
                     ? 'Passwords do not match'
                     : undefined
                 }
+                required={true}
               />
 
               <Field
@@ -608,6 +612,7 @@ function Field(props: {
   maxLength?: number;
   editable?: boolean;
   secureTextEntry?: boolean;
+  required?: boolean;
 }) {
   const {
     label,
@@ -623,12 +628,15 @@ function Field(props: {
     maxLength,
     editable = true,
     secureTextEntry,
+    required = false,
   } = props;
-
+  const { colors } = useTheme();
   return (
     <View style={[tw`mb-4`, containerStyle]}>
       <View style={tw`flex-row justify-between items-end mb-1`}>
-        <Text style={tw`text-gray-300`}>{label}</Text>
+        <Text style={[{ color: colors.textSecondary }, tw`text-xs`]}>
+          {label} {required && <Text style={tw`text-red-500`}>*</Text>}
+        </Text>
         {right}
       </View>
       <TextInput
@@ -641,8 +649,9 @@ function Field(props: {
         editable={editable}
         secureTextEntry={secureTextEntry}
         style={tw.style(
-          `text-white rounded-xl px-3 py-3 border`,
-          error ? `border-red-500` : `border-[#253041]`,
+          `rounded-xl px-3 py-3 border`,
+          error ? `border-red-500` : `border-sky-600`,
+          { color: colors.text },
           !editable && `opacity-60`,
         )}
         multiline={multiline}

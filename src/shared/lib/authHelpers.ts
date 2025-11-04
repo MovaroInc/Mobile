@@ -19,7 +19,6 @@ export async function createUserAccount(
   role: string,
   status: string,
 ): Promise<{ success: boolean; data: any; error: any; message: string }> {
-  console.log('subsubscriptionId passed', subscription_id);
   const { success, data, error, message } = await api.post<{
     success: boolean;
     data: any | null;
@@ -212,16 +211,14 @@ export async function updateProfileAndBusiness(
   employee: any,
   customer: any,
 ): Promise<{ success: boolean; data: any; error: any; message: string }> {
-  console.log('updating profile and business', profile, business, employee);
   const resp = await api.post<{
     success: boolean;
     data: any | null;
     error: any | null;
     message: string | null;
-  }>('/users/update-profile', {
+  }>(`/users/update-profile/${profile.id}`, {
     business_id: business.id,
     employee_id: employee.id,
-    id: profile.id,
   });
   if (!resp.data.success) {
     return {
@@ -232,12 +229,12 @@ export async function updateProfileAndBusiness(
     };
   }
 
-  const resp2 = await api.post<{
+  const resp2 = await api.put<{
     success: boolean;
     data: any | null;
     error: any | null;
     message: string | null;
-  }>(`/businesses/update-business/${business.id}`, {
+  }>(`/business/update-business/${business.id}`, {
     customer_id: customer.id,
   });
   if (!resp2.data.success) {
@@ -272,10 +269,9 @@ export const updateProfileWithEmployeeId = async (
     data: any | null;
     error: any | null;
     message: string | null;
-  }>('/users/update-profile', {
+  }>(`/users/update-profile/${id}`, {
     business_id,
     employee_id,
-    id,
   });
   return { success, data, error, message };
 };

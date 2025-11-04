@@ -21,39 +21,20 @@ import PushService, {
 import { useSession } from './src/state/useSession';
 import { storeNotificationToken } from './src/shared/lib/notifications';
 
-// 🎯 Get your custom Native Module instance
-// This assumes your bridge is correctly named APNSTokenManager
 const { APNSTokenManager } = NativeModules;
 
-/**
- * Polling function to retrieve the APNs token from the custom Swift module.
- * The native token registration (application:didRegisterForRemoteNotificationsWithDeviceToken)
- * is asynchronous and fires AFTER the JS code runs. We poll until the Swift module
- * has stored the token.
- */
 const retrieveTokenFromNativeModule = async (profile: any) => {
   if (Platform.OS !== 'ios' || !APNSTokenManager) {
-    console.log('[APNSTokenManager] Native module not available.');
     return;
   }
 
   const MAX_RETRIES = 10;
-  // Use exponential backoff for retries
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
-      // Calls the getDeviceToken method exposed in APNSTokenManagerBridge.m
       const token = await APNSTokenManager.getDeviceToken();
 
       if (token) {
-        // 🎯 SUCCESS: THE TOKEN IS LOGGED HERE IN JAVASCRIPT
-        console.log(
-          '[APNSTokenManager] ✅ Device Token Retrieved in JS:',
-          token,
-        );
-
-        // You can now use the PushService object to store the token:
         await AsyncStorage.setItem('@apns_device_token', token);
-        console.log('[APNSTokenManager] Token saved to AsyncStorage');
         if (profile) {
           const payload = {
             apns_token: token,
@@ -73,9 +54,6 @@ const retrieveTokenFromNativeModule = async (profile: any) => {
 
       // Wait for 1, 2, 4, 8... seconds before retrying
       const delay = Math.pow(2, i);
-      console.log(
-        `[APNSTokenManager] Token not yet ready. Retrying in ${delay}s...`,
-      );
       await new Promise(resolve => setTimeout(resolve, delay * 1000));
     } catch (e) {
       console.error(
@@ -85,16 +63,13 @@ const retrieveTokenFromNativeModule = async (profile: any) => {
       break;
     }
   }
-  console.log('[APNSTokenManager] ⚠️ Token not retrieved after max retries.');
 };
 
 export default function App() {
   const { isDark, colors } = useTheme();
   const { profile } = useSession();
   const checkLocation = () => {
-    const geo_success = (position: any) => {
-      console.log('geo_success', position?.coords);
-    };
+    const geo_success = (position: any) => {};
     const geo_error = (error: any) => {
       console.log('geo_error', error);
     };
@@ -109,8 +84,6 @@ export default function App() {
     // 1. Request permissions (which triggers native registration via AppDelegate)
     requestNotificationPermission()
       .then(granted => {
-        console.log('Notification permission granted status:', granted);
-
         // 2. Start polling for the token stored by the native module
         if (granted) {
           retrieveTokenFromNativeModule(profile || null);

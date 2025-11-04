@@ -4,7 +4,6 @@ export const getEntityById = async (
   id: number,
   mode: 'customer' | 'vendor',
 ) => {
-  console.log('getEntityById', id, mode);
   const res = await api.get<{
     success: boolean;
     data: any | null;

@@ -37,6 +37,7 @@ import {
   X as CloseIcon,
   Phone,
   Edit2,
+  ArrowLeft,
 } from 'react-native-feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -68,7 +69,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const convertToYYYYMMDD = (date: string) => {
   const [day, month, year] = date.split('/');
-  return `${year}-${month}-${day}`;
+  return `${year}-${day}-${month}`;
 };
 
 const selectedDate = convertToYYYYMMDD(new Date().toLocaleDateString());
@@ -159,13 +160,13 @@ export default function RouteDraftScreen() {
   const nav = useNavigation<any>();
   const { params } = useRoute<any>();
   const { routeId, payload } = params as RouteParams;
-  console.log('payload', JSON.stringify(payload, null, 2));
 
   const [stops, setStops] = useState<Stop[]>([]);
   const [loading, setLoading] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [route, setRoute] = useState<any>(null);
+  const [showRouteOptimize, setShowRouteOptimize] = useState(!payload.optimize);
 
   const [headerTitle, setHeaderTitle] = useState('');
 
@@ -338,7 +339,6 @@ export default function RouteDraftScreen() {
     (async () => {
       try {
         const res = await getRouteById(routeId);
-        console.log('res', JSON.stringify(res, null, 2));
         setRoute(res.data);
         setStops(
           (res.data.stops || [])
@@ -465,7 +465,7 @@ export default function RouteDraftScreen() {
       const payloadToCreate = {
         route_id: route.id,
         business_id: business.id,
-        stop_type: 'baae', // marker for your backend (was 'baae' earlier)
+        stop_type: 'base', // marker for your backend (was 'baae' earlier)
         depot_role: 'end', // optional semantic
         customer_id: null,
         vendor_id: null,
@@ -606,13 +606,7 @@ export default function RouteDraftScreen() {
         destination: dest,
         stops: stopsPayload,
       };
-
-      console.log('optimizeFullRoute payload:', payloadToOptimize);
       const res = await createOptimizedRoute(payloadToOptimize);
-      console.log(
-        'optimizeFullRoute result:',
-        JSON.stringify(res.data, null, 2),
-      );
 
       if (!res?.success) {
         Alert.alert(
@@ -629,10 +623,7 @@ export default function RouteDraftScreen() {
 
       setFullyOptimized(true);
       await AsyncStorage.setItem('fullyOptimized', 'true');
-      Alert.alert(
-        'Optimized!',
-        'Route order and metrics received. Review before publishing.',
-      );
+      return true;
     } catch (e: any) {
       console.error('optimizeFullRoute error', e);
       Alert.alert('Error', e?.message || 'Failed to optimize route.');
@@ -677,6 +668,13 @@ export default function RouteDraftScreen() {
   };
 
   const onPublish = async () => {
+    let successfullOptimization = false;
+    if (route.optimize) {
+      const optmizationComplete = await optimizeFullRoute(stops);
+      if (optmizationComplete) {
+        successfullOptimization = true;
+      }
+    }
     if (stops.length === 0) {
       Alert.alert(
         'Add at least 1 stop',
@@ -685,7 +683,6 @@ export default function RouteDraftScreen() {
       return;
     }
     setPublishing(true);
-    console.log('publish date', selectedDate);
     try {
       const resp = await publishRouteWithStops(routeId, {
         status: 'dispatched',
@@ -705,7 +702,12 @@ export default function RouteDraftScreen() {
         } catch (e) {
           console.warn('inbox route.dispatched failed', e);
         }
-        Alert.alert('Published', 'Route scheduled!');
+        Alert.alert(
+          'Published',
+          `${
+            successfullOptimization ? 'Your route was optimized & ' : null
+          } the route displatched to driver!`,
+        );
         nav.goBack();
       } else {
         Alert.alert('Error', resp.error?.message ?? 'Failed to publish route');
@@ -776,15 +778,16 @@ export default function RouteDraftScreen() {
       style={[tw`flex-1`, { backgroundColor: colors.bg }]}
     >
       {/* Top bar */}
-      <View style={tw`px-2 pt-4 pb-3 flex-row items-center`}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <ChevronLeft width={24} height={24} color={colors.text} />
+      <View style={tw`px-4 pt-4 pb-3 flex-row items-center`}>
+        <TouchableOpacity
+          onPress={() => nav.goBack()}
+          style={[tw`p-2 rounded-lg mr-2`, { backgroundColor: colors.button }]}
+        >
+          <ArrowLeft width={18} height={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <View style={tw`pl-2`}>
-          <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            Single Route Draft
-          </Text>
-        </View>
+        <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
+          Single Route Draft
+        </Text>
       </View>
       <View style={tw`flex-1`}>
         <FlatList
@@ -797,7 +800,7 @@ export default function RouteDraftScreen() {
               <View
                 style={[
                   tw`rounded-2xl p-3 mb-3`,
-                  { backgroundColor: colors.border },
+                  { backgroundColor: colors.card },
                 ]}
               >
                 <View style={tw`flex-row items-center justify-between`}>
@@ -811,27 +814,30 @@ export default function RouteDraftScreen() {
                   </Text>
                   <TouchableOpacity
                     onPress={() => {
-                      console.log('route', JSON.stringify(route, null, 2));
                       nav.navigate('EditRouteScreen', { route });
                     }}
                     style={[
                       tw`ml-2 rounded-lg p-2`,
-                      { backgroundColor: colors.main },
+                      { backgroundColor: colors.button },
                     ]}
                   >
-                    <Edit2 width={14} height={14} color={colors.text} />
+                    <Edit3
+                      width={14}
+                      height={14}
+                      color={colors.textSecondary}
+                    />
                   </TouchableOpacity>
                 </View>
 
                 <View style={tw`flex-row items-center mb-1`}>
-                  <Calendar width={14} height={14} color={colors.text} />
+                  <Calendar width={14} height={14} color={colors.icon} />
                   <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
                     {headerTitle}
                   </Text>
                 </View>
 
                 <View style={tw`flex-row items-center mb-1`}>
-                  <Clock width={14} height={14} color={colors.text} />
+                  <Clock width={14} height={14} color={colors.icon} />
                   <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
                     Planned start: {plannedStartHM || '—'}
                   </Text>
@@ -839,7 +845,7 @@ export default function RouteDraftScreen() {
 
                 <View style={tw`flex-row items-center justify-between`}>
                   <View style={tw`flex-row items-center`}>
-                    <User width={14} height={14} color={colors.text} />
+                    <User width={14} height={14} color={colors.icon} />
                     <Text style={[tw`ml-2 text-sm`, { color: colors.text }]}>
                       {(route?.driver?.first_name ?? '') +
                         ' ' +
@@ -868,7 +874,7 @@ export default function RouteDraftScreen() {
                   Stops ({stops.length})
                 </Text>
                 <View style={tw`flex-row`}>
-                  {!route?.optimize && (
+                  {showRouteOptimize && (
                     <TouchableOpacity
                       onPress={confirmRoute}
                       disabled={publishing || stops.length === 0}
@@ -911,10 +917,10 @@ export default function RouteDraftScreen() {
                 <View
                   style={[
                     tw`rounded-2xl p-4 mb-3`,
-                    { backgroundColor: colors.border },
+                    { backgroundColor: colors.card },
                   ]}
                 >
-                  <Text style={[tw`text-sm`, { color: colors.muted }]}>
+                  <Text style={[tw`text-sm`, { color: colors.textSecondary }]}>
                     No stops yet. Tap “Add Stop” to get started.
                   </Text>
                 </View>
@@ -930,8 +936,6 @@ export default function RouteDraftScreen() {
               index === stops.length - 1 ||
               !canMoveStop(item) ||
               !canMoveStop(stops[index + 1]);
-
-            console.log('item', JSON.stringify(item, null, 2));
 
             return (
               <View style={[tw`px-4`]}>
@@ -1072,10 +1076,9 @@ export default function RouteDraftScreen() {
           style={[
             tw`px-4 py-3 rounded-2xl items-center w-full`,
             {
-              backgroundColor:
-                publishing || stops.length === 0
-                  ? colors.border
-                  : colors.brand?.primary || '#2563eb',
+              backgroundColor: publishing
+                ? colors.border
+                : colors.brand?.primary || '#2563eb',
             },
           ]}
         >

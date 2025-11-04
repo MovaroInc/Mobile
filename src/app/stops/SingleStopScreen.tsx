@@ -2,7 +2,6 @@
 import React, {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,6 +19,7 @@ import {
   ActivityIndicator,
   Modal,
   Switch,
+  PermissionsAndroid,
 } from 'react-native';
 import tw from 'twrnc';
 import MapboxGL from '@rnmapbox/maps';
@@ -50,8 +50,11 @@ import {
   uploadImage,
 } from '../../shared/lib/ImageHelpers';
 import { useSession } from '../../state/useSession';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBusinessAdmin } from '../../shared/lib/BusinessHelpers';
+// If you already have a Notifications helper, keep this import.
+// Otherwise stub the function or adjust createNotification accordingly.
+import { sendNotification } from '../../shared/lib/notifications';
+import { getOneFix } from '../../shared/lib/locations';
 
 const DevMode = true;
 
@@ -98,6 +101,8 @@ type Requirements = {
   require_photo_products?: boolean;
   print_name?: string | boolean;
   notes?: string | null;
+  parking?: string | null;
+  entrance?: string | null;
 };
 
 type Photo = {
@@ -105,10 +110,11 @@ type Photo = {
   photo_url: string;
   width?: number;
   height?: number;
-  photo_category?: 'invoice' | 'products' | 'other' | null;
+  photo_category?: 'invoice' | 'products' | 'product' | 'other' | null;
   storage_path?: string | null;
   mime_type?: string | null;
   byte_size?: number | null;
+  source?: 'driver' | 'admin' | null;
 };
 
 type Stop = {
@@ -144,6 +150,8 @@ type Stop = {
   photos?: Photo[] | null;
   proof?: any;
   details?: any;
+
+  arrived_at?: string | null;
 };
 
 type Props = {
@@ -158,15 +166,18 @@ const DEFAULT_AVG_MPH = 25;
 /** New: image item shape for the two buckets */
 type imageItem = {
   id: string;
-  uri: string;
+  uri?: string;
   width?: number;
   height?: number;
   mimeType?: string;
   size?: number;
+  fileName?: string;
+  photo_url?: string;
 };
 
 type ActionState = {
   signatureImage?: imageItem | null;
+  signature?: string;
   printedName?: string;
   gaveInvoiceConfirmed?: boolean;
   idCheckedConfirmed?: boolean;
@@ -192,6 +203,11 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
   const lastOriginRef = useRef<LatLng | null>(null);
   const [devBypassRadius, setDevBypassRadius] = useState(false);
 
+  // Deterministic flow states
+  const [locating, setLocating] = useState<boolean>(false);
+  const [routing, setRouting] = useState<boolean>(false);
+  const [routeErr, setRouteErr] = useState<string | null>(null);
+
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
@@ -203,11 +219,12 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
 
   const [signatureCollected, setSignatureCollected] = useState(false);
 
-  // ✅ New: two image buckets
+  // ✅ Two image buckets
   const [invoiceImages, setInvoiceImages] = useState<imageItem[]>([]);
   const [otherImages, setOtherImages] = useState<imageItem[]>([]);
   const [adminPhotos, setAdminPhotos] = useState<imageItem[]>([]);
-  // ✅ New: actionable requirement inputs
+
+  // ✅ Actionable requirement inputs
   const [actions, setActions] = useState<ActionState>({});
 
   // Payment form
@@ -291,52 +308,137 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     .filter(Boolean)
     .join(' • ');
 
-  // ───────── location: request & watch ─────────
+  // ───────── SINGLE-SHOT LOCATION + ROUTE HELPERS ─────────
+
+  async function ensureLocationPermission(): Promise<boolean> {
+    if (Platform.OS === 'ios') {
+      const auth = await Geolocation.requestAuthorization('whenInUse');
+      return auth === 'granted';
+    }
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Location Permission',
+        message: 'We use your location to show distance and ETA to the stop.',
+        buttonPositive: 'OK',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  }
+
+  async function ensureCurrentThenRoute(): Promise<boolean> {
+    setRouteErr(null);
+
+    if (!dest) {
+      setRouteErr('Missing destination coordinates.');
+      Alert.alert('No destination', 'Missing destination coordinates.');
+      return false;
+    }
+
+    try {
+      setLocating(true);
+      const here = await getOneFix();
+      setCurrent(here.coords);
+      setLocating(false);
+
+      if (
+        here.coords.latitude &&
+        here.coords.longitude &&
+        dest.latitude &&
+        dest.longitude
+      ) {
+        setRouting(true);
+        await getRoute(
+          here.coords.longitude,
+          here.coords.latitude,
+          dest.longitude,
+          dest.latitude,
+        );
+        setRouting(false);
+        return true;
+      } else {
+        setRouteErr('Invalid coordinates from GPS or destination.');
+        return false;
+      }
+    } catch (e: any) {
+      setLocating(false);
+      setRouteErr('Could not get your location.');
+      console.warn('[getOneFix] failed', e?.message || e);
+      Alert.alert('Location error', 'Could not get your location. Try again.');
+      return false;
+    }
+  }
+
+  // ───────── boot: permission → one fix → route; then optional watch ─────────
   useEffect(() => {
-    requestAndWatchLocation();
+    let cancelled = false;
+
+    const boot = async () => {
+      if (cancelled) return;
+
+      const ok = await ensureCurrentThenRoute();
+
+      // OPTIONAL watch after first success
+      if (ok) {
+        requestAndWatchLocation();
+      }
+    };
+
+    boot();
+
     return () => {
+      cancelled = true;
       if (watchId != null) Geolocation.clearWatch(watchId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [dest?.latitude, dest?.longitude]);
 
   useFocusEffect(
     useCallback(() => {
-      console.log('useFocusEffect');
       loadStop();
     }, []),
   );
 
   const loadStop = async () => {
-    console.log('loadStop', stop.id);
-    const res = await getStopById(stop.id);
-    console.log('res', res);
-    setStop(res.data);
-    console.log('res.data.photos', res.data.photos);
-    setInvoiceImages(
-      res.data.photos?.filter(
-        p => p.photo_category === 'invoice' && p.source === 'driver',
-      ) || [],
-    );
-    setOtherImages(
-      res.data.photos?.filter(
-        p => p.photo_category === 'product' && p.source === 'driver',
-      ) || [],
-    );
-    setAdminPhotos(res.data.photos?.filter(p => p.source === 'admin') || []);
+    try {
+      const res = await getStopById(stop.id);
+      setStop(res.data);
+
+      const all = Array.isArray(res.data.photos) ? res.data.photos : [];
+      setInvoiceImages(
+        all
+          .filter(
+            (p: any) => p.photo_category === 'invoice' && p.source === 'driver',
+          )
+          .map((p: any) => ({ id: String(p.id), photo_url: p.photo_url })),
+      );
+      setOtherImages(
+        all
+          .filter(
+            (p: any) =>
+              (p.photo_category === 'product' ||
+                p.photo_category === 'products') &&
+              p.source === 'driver',
+          )
+          .map((p: any) => ({ id: String(p.id), photo_url: p.photo_url })),
+      );
+      setAdminPhotos(
+        all
+          .filter((p: any) => p.source === 'admin')
+          .map((p: any) => ({ id: String(p.id), photo_url: p.photo_url })),
+      );
+    } catch (e) {
+      console.warn('loadStop error', e);
+    }
   };
 
+  // keep your original watch logic, but only start it after first success
   const requestAndWatchLocation = async () => {
     try {
-      const granted = await requestLocationPermission();
-      if (!granted) {
-        Alert.alert(
-          'Location needed',
-          'Enable location to calculate ETA and allow arrival confirmation.',
-        );
-        return;
-      }
-      Geolocation.getCurrentPosition(
+      const granted = await ensureLocationPermission();
+      if (!granted) return;
+
+      const id = Geolocation.watchPosition(
         pos => {
           const here = {
             latitude: pos.coords.latitude,
@@ -344,15 +446,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           };
           setCurrent(here);
         },
-        err => console.warn('getCurrentPosition error', err),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
-      );
-      const id = Geolocation.watchPosition(
-        pos =>
-          setCurrent({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          }),
         err => console.warn('watchPosition error', err),
         {
           enableHighAccuracy: true,
@@ -361,39 +454,13 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           fastestInterval: 4000,
         },
       );
-      setWatchId(id);
+      setWatchId(id as unknown as number);
     } catch (e) {
-      console.warn('Location error', e);
+      console.warn('watch error', e);
     }
   };
 
-  // ───────── Mapbox Directions ─────────
-  useEffect(() => {
-    const fetchRouteIfNeeded = async () => {
-      if (!current || !dest) return;
-      const movedEnough =
-        !lastOriginRef.current ||
-        haversineMiles(
-          current.latitude,
-          current.longitude,
-          lastOriginRef.current.latitude,
-          lastOriginRef.current.longitude,
-        ) > 0.2;
-
-      if (!routeShape || movedEnough) {
-        await getRoute(
-          current.longitude,
-          current.latitude,
-          dest.longitude,
-          dest.latitude,
-        );
-        lastOriginRef.current = current;
-      }
-    };
-    fetchRouteIfNeeded();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.latitude, current?.longitude, dest?.latitude, dest?.longitude]);
-
+  // ───────── Mapbox Directions (hardened) ─────────
   const getRoute = async (
     originLng: number,
     originLat: number,
@@ -401,11 +468,15 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     destLat: number,
   ) => {
     try {
+      setRouteErr(null);
+      setRouting(true);
+
       const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${originLng},${originLat};${destLng},${destLat}?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`;
       const res = await fetch(url);
       const json = await res.json();
+
       const route = json?.routes?.[0];
-      if (route?.geometry?.coordinates) {
+      if (route?.geometry?.coordinates?.length) {
         const fc = {
           type: 'FeatureCollection' as const,
           features: [
@@ -420,8 +491,12 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           ],
         };
         setRouteShape(fc);
-        setRouteDistanceM(route.distance ?? null);
-        setRouteDurationS(route.duration ?? null);
+        setRouteDistanceM(
+          typeof route.distance === 'number' ? route.distance : null,
+        );
+        setRouteDurationS(
+          typeof route.duration === 'number' ? route.duration : null,
+        );
 
         const [minLng, minLat, maxLng, maxLat] = bboxFromCoordinates(
           route.geometry.coordinates,
@@ -438,6 +513,8 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
         setRouteShape(null);
         setRouteDistanceM(null);
         setRouteDurationS(null);
+        setRouteErr('No route found.');
+
         if (cameraRef.current) {
           const minLat = Math.min(originLat, destLat);
           const maxLat = Math.max(originLat, destLat);
@@ -453,8 +530,19 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
       }
     } catch (e) {
       console.warn('Directions fetch failed', e);
+      setRouteErr('Unable to fetch route.');
+      setRouteShape(null);
+      setRouteDistanceM(null);
+      setRouteDurationS(null);
+    } finally {
+      setRouting(false);
     }
   };
+
+  // manual refresh: force permission → fix → route
+  const refreshLocationAndRoute = useCallback(async () => {
+    await ensureCurrentThenRoute();
+  }, [dest?.latitude, dest?.longitude]);
 
   // ───────── navigation intent ─────────
   const navigateTo = async () => {
@@ -513,43 +601,31 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
   };
 
   const createNotification = async (title: string, body: string) => {
-    // NOTE: The original code used 'invite.business_id', but the context was 'business.id'.
-    // I'm using 'invite.business_id' as provided in your prompt, but verify this is correct.
     const admin = await getBusinessAdmin(business?.id ?? 0);
-    console.log('admin list', admin);
 
-    if (admin.data.length > 0) {
-      // 1. FILTER: First, filter the admin data to only include those with a valid apns_token.
+    if (admin?.data?.length > 0) {
       const adminsWithToken = admin.data.filter((a: any) => {
         const token = a?.profile?.device?.[0]?.apns_token;
-        // A concise check for a non-empty string: it's not null/undefined AND its length > 0
         return typeof token === 'string' && token.length > 0;
       });
 
-      // 2. MAP: Then, create an array of Promises only for the filtered admins.
-      const sendPromises = adminsWithToken.map(async (a: any) => {
-        console.log('admin found', a);
-        const token = a.profile.device[0].apns_token;
+      const results = await Promise.all(
+        adminsWithToken.map(async (a: any) => {
+          const token = a.profile.device[0].apns_token;
+          const payload = {
+            title,
+            body,
+            data: 'This is notification data',
+            token,
+            token_type: Platform.OS,
+            sendAt: 1000,
+          };
+          const res = await sendNotification(payload);
+          return res?.success;
+        }),
+      );
 
-        const payload = {
-          title: title,
-          body: body,
-          data: 'This is notification data',
-          token: token,
-          token_type: Platform.OS,
-          sendAt: 1000,
-        };
-
-        const res = await sendNotification(payload);
-        return res?.success; // Return the success status of the send attempt
-      });
-
-      // 3. AWAIT: Wait for all successful promises to complete.
-      // If 'adminsWithToken' is empty, 'sendPromises' is empty, and Promise.all resolves immediately.
-      const results = await Promise.all(sendPromises);
-
-      // Return true if at least one notification attempt was successful.
-      return results.some(success => success);
+      return results.some(Boolean);
     }
     return true;
   };
@@ -578,8 +654,62 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     else setOtherImages(prev => prev.filter(x => x.id !== id));
   };
 
+  async function uploadFrom(source: 'camera' | 'gallery') {
+    if (!activeBucket) {
+      setPickerVisible(false);
+      return;
+    }
+    try {
+      const asset =
+        source === 'camera'
+          ? await takePhotoWithCamera()
+          : await pickImageFromGallery();
+      if (!asset?.uri) {
+        setPickerVisible(false);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', {
+        uri: asset.uri,
+        name: asset.fileName || 'photo.jpg',
+        type: asset.type || 'image/jpeg',
+      } as any);
+      const res = await uploadImage(formData);
+      if (!res?.success || !res?.url) throw new Error('Upload failed');
+
+      addPhotoTo(activeBucket, {
+        id: res.url,
+        uri: res.url,
+        fileName: asset.fileName,
+        mimeType: asset.type,
+        size: asset.size,
+      });
+
+      await createStopsPhotos({
+        stop_id: stop.id,
+        business_id: business.id,
+        uploaded_by: profile.id,
+        photo_category: activeBucket === 'invoice' ? 'invoice' : 'product',
+        photo_url: res.url,
+        storage_path: asset?.uri ?? null,
+        mime_type: asset?.type ?? null,
+        byte_size: asset?.size ?? null,
+        width: (asset as any)?.width ?? null,
+        height: (asset as any)?.height ?? null,
+        source: 'driver',
+      });
+    } catch (e: any) {
+      console.warn('upload error', e);
+      Alert.alert('Upload failed', e?.message || 'Please try again.');
+    } finally {
+      setPickerVisible(false);
+      setActiveBucket(null);
+      loadStop();
+    }
+  }
+
   function buildProofPayload() {
-    // Anything you want to keep as proof for this stop
     return {
       confirms: {
         gaveInvoice: !!actions.gaveInvoiceConfirmed,
@@ -591,7 +721,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
       },
       printedName: actions.printedName || null,
       temperatureF: actions.tempReadingF ?? null,
-      // Store the driver-uploaded URLs (not admin photos)
       driverPhotos: {
         invoice: invoiceImages.map(i => i.uri ?? i.photo_url).filter(Boolean),
         other: otherImages.map(i => i.uri ?? i.photo_url).filter(Boolean),
@@ -612,13 +741,12 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
   }
 
   const handleConfirmAndComplete = async () => {
-    if (!isValid) return; // button is disabled anyway
+    if (!isValid) return;
     try {
       setConfirmLoading(true);
 
       const proofPayload = buildProofPayload();
 
-      // compute minutes at stop (non-negative, integer)
       const now = new Date();
       const departedAtIso = now.toISOString();
 
@@ -627,7 +755,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
         const arriveMs = new Date(stop.arrived_at).getTime();
         if (!Number.isNaN(arriveMs)) {
           const diffMin = (now.getTime() - arriveMs) / 60000;
-          // round to nearest whole minute; ensure non-negative
           serviceMinutesActual = Math.max(0, Math.round(diffMin));
         }
       }
@@ -635,7 +762,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
       const payload: any = {
         status: 'completed',
         departed_at: departedAtIso,
-        service_minutes_actual: serviceMinutesActual, // bigint >= 0 or null
+        service_minutes_actual: serviceMinutesActual,
         proof: proofPayload,
         checklist_complete: true,
       };
@@ -643,21 +770,16 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
       const updated = await updateStopStatus(stop.id, payload);
 
       const payloadPayment = {
-        stop_id: stop.payments?.id,
+        id: stop.payments?.id,
         amount_captured: Number(paymentForm.amount) || 0,
         amount_difference:
-          Number(stop.payments?.amount_due) - Number(paymentForm.amount) || 0,
+          (Number(stop.payments?.amount_due) || 0) -
+            (Number(paymentForm.amount) || 0) || 0,
         actual_method: paymentForm.method,
         actual_direction: paymentForm.direction,
       };
 
-      console.log('payloadPayment', payloadPayment);
-
-      const updatedPayment = await updateStopPayment(
-        stop.payments?.id ?? 0,
-        payloadPayment,
-      );
-      console.log('updatedPayment', updatedPayment);
+      await updateStopPayment(stop.payments?.id ?? 0, payloadPayment);
 
       await createNotification(
         'Stop Completed',
@@ -666,73 +788,11 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
 
       setStop(updated.data);
       setConfirmVisible(false);
-
-      // optional toast/alert — remove if you want zero UI friction
-      // Alert.alert('Completed', 'Stop closed successfully');
-
       navigation.goBack();
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to close stop.');
     } finally {
       setConfirmLoading(false);
-    }
-  };
-
-  const uploadFrom = async (source: 'camera' | 'gallery') => {
-    if (!activeBucket) {
-      setPickerVisible(false);
-      return;
-    }
-    try {
-      const asset =
-        source === 'camera'
-          ? await takePhotoWithCamera()
-          : await pickImageFromGallery();
-      if (!asset?.uri) {
-        setPickerVisible(false);
-        return;
-      }
-
-      // Upload to your storage
-      const formData = new FormData();
-      formData.append('file', {
-        uri: asset.uri,
-        name: asset.fileName || 'photo.jpg',
-        type: asset.type || 'image/jpeg',
-      } as any);
-      const res = await uploadImage(formData);
-      if (!res?.success || !res?.url) throw new Error('Upload failed');
-
-      addPhotoTo(activeBucket, {
-        id: res.url,
-        uri: asset.uri,
-        fileName: asset.fileName,
-        type: asset.type,
-        size: asset.size,
-        uri: res.url || null,
-      });
-
-      // Persist to DB (category mapped by bucket)
-      await createStopsPhotos({
-        stop_id: stop.id,
-        business_id: business.id,
-        uploaded_by: profile.id,
-        photo_category: activeBucket === 'invoice' ? 'invoice' : 'product',
-        photo_url: res.url,
-        storage_path: asset?.uri ?? null,
-        mime_type: asset?.type ?? null,
-        byte_size: asset?.size ?? null,
-        width: asset?.width ?? null,
-        height: asset?.height ?? null,
-        source: 'driver',
-      });
-    } catch (e: any) {
-      console.warn('upload error', e);
-      Alert.alert('Upload failed', e?.message || 'Please try again.');
-    } finally {
-      setPickerVisible(false);
-      setActiveBucket(null);
-      loadStop();
     }
   };
 
@@ -749,15 +809,14 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
       errs.push('At least 1 product photo is required.');
     }
 
-    // Determine if payment is required:
-    // Rule: if stop has a payment object and either direction is 'collect'
-    // or there's a positive amount_due, we require payment entry.
+    // Payment needed?
     const payReq =
+      stop.requirements?.collect_payment &&
       !!stop.payments &&
       (stop.payments.direction === 'collect' ||
         (Number(stop.payments.amount_due) || 0) > 0);
 
-    // Payment validation (only if required)
+    // Payment validation
     if (payReq) {
       if (!paymentForm.method) errs.push('Select a payment method.');
       if (!paymentForm.status) errs.push('Select a payment status.');
@@ -773,14 +832,13 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
         errs.push('Enter a positive payment amount (or mark waived).');
     }
 
-    // Requirement-driven actionable items
+    // Requirement-driven actions
     if (r.give_invoice && !actions.gaveInvoiceConfirmed) {
       errs.push('Confirm invoice was given.');
     }
     if (r.signature && !actions.signatureImage) {
       errs.push('Customer signature required.');
     }
-
     if (r.print_name === true && !actions.printedName?.trim()) {
       errs.push('Printed name is required.');
     }
@@ -817,52 +875,36 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     signatureCollected,
   ]);
 
-  const handleComplete = async () => {
-    if (!isValid) {
-      Alert.alert('Missing requirements', errors.join('\n'));
-      return;
-    }
-    // Persist any remaining proof fields here if needed (signature, temp, printed name, confirmations)
-    // Then complete the stop:
-    try {
-      const updatedStop = await updateStopStatus(stop.id, {
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      });
-      setStop(updatedStop.data);
-      Alert.alert('Completed', 'Stop marked as completed.');
-      (navigation as any).goBack?.();
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to complete stop.');
-    }
-  };
-
   // ───────── render ─────────
   return (
     <View style={[tw`flex-1`, { backgroundColor: colors.bg }]}>
       {/* Header */}
-      <View style={[tw`px-4 pt-5 pb-3 flex-row items-center`]}>
-        <TouchableOpacity
-          onPress={() => (navigation as any).goBack?.()}
-          style={[
-            tw`mr-3 rounded-full p-2`,
-            { backgroundColor: colors.border },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <ArrowLeft width={18} height={18} color={colors.text} />
-        </TouchableOpacity>
-
-        <View style={tw`flex-1`}>
-          <View style={tw`flex-row items-center justify-between`}>
-            <Text
-              style={[tw`text-2xl font-bold`, { color: colors.text }]}
-              numberOfLines={1}
-            >
-              {stop.business_name}
+      <View style={[tw`px-4 pt-4 pb-3 flex-row items-center`]}>
+        <View style={tw`flex-row items-center`}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[
+              tw`p-2 rounded-lg mr-2`,
+              { backgroundColor: colors.button },
+            ]}
+          >
+            <ArrowLeft width={18} height={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <View style={tw`flex-1`}>
+            <View style={tw`flex-row items-center justify-between`}>
+              <Text
+                style={[tw`text-xl font-bold`, { color: colors.text }]}
+                numberOfLines={1}
+              >
+                {stop.business_name}
+              </Text>
+              <StopStatusChip status={stop.status} />
+            </View>
+            <Text style={[tw`text-xs`, { color: colors.muted }]}>
+              {stop.stop_type ? stop.stop_type.toUpperCase() : 'STOP'} · Seq{' '}
+              {stop.sequence ?? '—'}
             </Text>
-            {DevMode && (
+            {/* {DevMode && (
               <TouchableOpacity
                 onPress={() => setDevBypassRadius(v => !v)}
                 style={[
@@ -874,15 +916,11 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   {devBypassRadius ? 'DEV: 2mi Gate OFF' : 'DEV: 2mi Gate ON'}
                 </Text>
               </TouchableOpacity>
-            )}
-            <StopStatusChip status={stop.status} />
+            )} */}
           </View>
-          <Text style={[tw`text-xs`, { color: colors.muted }]}>
-            {stop.stop_type ? stop.stop_type.toUpperCase() : 'STOP'} · Seq{' '}
-            {stop.sequence ?? '—'}
-          </Text>
         </View>
       </View>
+
       {/* Map */}
       {stop.status !== 'arrived' && (
         <View style={tw`px-4`}>
@@ -931,6 +969,47 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
               ) : null}
             </MapboxGL.MapView>
 
+            {/* Status pill */}
+            <View
+              style={[
+                tw`absolute left-2 top-2 px-2 py-1 rounded-lg`,
+                { backgroundColor: 'rgba(15, 23, 42, 0.8)' },
+              ]}
+            >
+              <Text style={tw`text-white text-2xs`}>
+                {locating
+                  ? 'Getting GPS fix…'
+                  : routing
+                  ? 'Routing…'
+                  : routeErr
+                  ? routeErr
+                  : current
+                  ? 'Ready'
+                  : 'Waiting…'}
+              </Text>
+            </View>
+
+            {/* Refresh button */}
+            <TouchableOpacity
+              onPress={refreshLocationAndRoute}
+              disabled={locating || routing}
+              style={[
+                tw`absolute right-2 top-2 px-3 py-1.5 rounded-xl`,
+                {
+                  backgroundColor:
+                    locating || routing
+                      ? '#334155'
+                      : colors.brand?.primary || '#2563eb',
+                  opacity: locating || routing ? 0.8 : 1,
+                },
+              ]}
+            >
+              <Text style={tw`text-white text-xs font-semibold`}>
+                {locating || routing ? 'Updating…' : 'Refresh'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Navigate button */}
             <TouchableOpacity
               onPress={navigateTo}
               style={[
@@ -941,15 +1020,18 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
               <Text style={tw`text-white text-xs font-semibold`}>Navigate</Text>
             </TouchableOpacity>
           </View>
+
+          {/* tiny debug line */}
         </View>
       )}
+
       {/* Stats strip */}
       {stop.status !== 'arrived' && (
         <View style={tw`px-4 mt-3`}>
           <View
             style={[
               tw`rounded-2xl p-3 flex-row`,
-              { backgroundColor: colors.borderSecondary || colors.border },
+              { backgroundColor: colors.card },
             ]}
           >
             <Stat
@@ -968,13 +1050,14 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           </View>
         </View>
       )}
+
       {/* Content */}
       <ScrollView style={tw`px-4`} contentContainerStyle={tw`pb-6`}>
         {/* Address & Contact */}
         <View style={tw`mt-3`}>
           <Card colors={colors}>
             <Row
-              icon={<MapPin width={14} height={14} color={colors.muted} />}
+              icon={<MapPin width={14} height={14} color={colors.icon} />}
               label="Address"
               value={addressLine}
             />
@@ -993,14 +1076,13 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
               trailing={
                 stop.contact_phone ? (
                   <TouchableOpacity
+                    style={[
+                      tw`px-2 py-1 rounded-full`,
+                      { backgroundColor: colors.brand?.primary },
+                    ]}
                     onPress={() => Linking.openURL(`tel:${stop.contact_phone}`)}
                   >
-                    <Text
-                      style={[
-                        tw`text-xs font-semibold`,
-                        { color: colors.brand?.primary || '#2563eb' },
-                      ]}
-                    >
+                    <Text style={[tw`text-xs font-semibold text-white`]}>
                       Call
                     </Text>
                   </TouchableOpacity>
@@ -1010,7 +1092,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           </Card>
         </View>
 
-        {/* Requirements read cards (keep your visibility rules) */}
+        {/* Requirements read cards */}
         {!radiusGateOk || stop.status !== 'arrived' ? (
           <Card colors={colors} title="Before You Arrive">
             <View style={tw`flex-row flex-wrap`}>
@@ -1124,6 +1206,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                 />
               </View>
             </Card>
+
             <Card colors={colors} title="Upon Arrival">
               <InlineFlag
                 label="Give invoice"
@@ -1136,6 +1219,10 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
               <InlineFlag
                 label="Print name"
                 active={!!stop.requirements?.print_name}
+              />
+              <InlineFlag
+                label="Collect Payment"
+                active={!!stop.requirements?.collect_payment}
               />
               <InlineFlag
                 label="Photo: invoice"
@@ -1153,8 +1240,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
               ) : null}
             </Card>
 
-            {/* NEW: Actionable inputs tied to flags */}
-
             {/* Existing DB photos (read-only) */}
             {canShowPhotos &&
             Array.isArray(stop.photos) &&
@@ -1164,7 +1249,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   {adminPhotos.map(p => (
                     <TouchableOpacity
                       key={`${p.photo_url}-${p.id ?? Math.random()}`}
-                      onPress={() => Linking.openURL(p.photo_url)}
+                      onPress={() => Linking.openURL(p.photo_url!)}
                       style={tw`w-1/3 p-1`}
                     >
                       <Image
@@ -1172,21 +1257,20 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                         style={tw`w-full h-28 rounded-xl`}
                         resizeMode="cover"
                       />
-                      {p.photo_category ? (
-                        <Text
-                          style={[tw`text-2xs mt-1`, { color: colors.muted }]}
-                          numberOfLines={1}
-                        >
-                          {p.photo_category}
-                        </Text>
-                      ) : null}
+                      <Text
+                        style={[tw`text-2xs mt-1`, { color: colors.muted }]}
+                        numberOfLines={1}
+                      >
+                        admin
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </Card>
             ) : null}
 
-            <CardInput colors={colors} title="Required Actions">
+            {/* Actionable inputs tied to flags */}
+            <CardInput colors={colors} title="Required Actions" required={true}>
               {stop.requirements?.give_invoice === true ? (
                 <ToggleRow
                   label="Invoice Given"
@@ -1197,6 +1281,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   colors={colors}
                 />
               ) : null}
+
               {stop.requirements?.signature === true ? (
                 <>
                   <View style={tw`mb-3`}>
@@ -1225,7 +1310,9 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                 <ToggleRow
                   label="Signature Collected"
                   value={!!actions.signatureImage}
-                  onChange={v => setActions(p => ({ ...p, signatureImage: v }))}
+                  onChange={v =>
+                    setActions(p => ({ ...p, signatureImage: v ? {} : null }))
+                  }
                   colors={colors}
                 />
               ) : null}
@@ -1250,17 +1337,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                     ]}
                   />
                 </View>
-              ) : null}
-
-              {stop.requirements?.give_invoice ? (
-                <ToggleRow
-                  label="Invoice Given"
-                  value={!!actions.gaveInvoiceConfirmed}
-                  onChange={v =>
-                    setActions(p => ({ ...p, gaveInvoiceConfirmed: v }))
-                  }
-                  colors={colors}
-                />
               ) : null}
 
               {stop.requirements?.id_required ? (
@@ -1336,31 +1412,9 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   />
                 </View>
               ) : null}
-
-              {/* {stop.requirements?.access_code ? (
-                <View>
-                  <Text style={[tw`text-2xs mb-1`, { color: colors.muted }]}>
-                    Access Code Used
-                  </Text>
-                  <TextInput
-                    placeholder="Enter the code you used"
-                    value={actions.accessCodeEntered || ''}
-                    onChangeText={t =>
-                      setActions(prev => ({ ...prev, accessCodeEntered: t }))
-                    }
-                    style={[
-                      tw`px-3 py-2 rounded-xl`,
-                      {
-                        backgroundColor: colors.borderSecondary,
-                        color: colors.text,
-                      },
-                    ]}
-                  />
-                </View>
-              ) : null} */}
             </CardInput>
 
-            {/* NEW: Two photo buckets */}
+            {/* Two photo buckets */}
             <CardInput
               colors={colors}
               title={`Invoice Photos ${
@@ -1368,6 +1422,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   ? '(Required)'
                   : '(Optional)'
               }`}
+              required={!!stop.requirements?.require_photo_invoice}
             >
               <PhotoBucket
                 colors={colors}
@@ -1384,6 +1439,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   ? '(Required)'
                   : '(Optional)'
               }`}
+              required={!!stop.requirements?.require_photo_products}
             >
               <PhotoBucket
                 colors={colors}
@@ -1394,9 +1450,89 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
             </CardInput>
 
             {/* Payment */}
-            {paymentRequired ? (
+            <CardInput
+              colors={colors}
+              required={!!stop.requirements?.collect_payment}
+              title="Record Payment (Required)"
+            >
+              <Text
+                style={[
+                  tw`text-2xs mb-1 mt-1`,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Method
+              </Text>
+              <SegmentRow
+                options={['cash', 'card', 'check', 'zelle', 'other']}
+                value={paymentForm.method}
+                onChange={v =>
+                  setPaymentForm(f => ({ ...f, method: v as any }))
+                }
+                colors={colors}
+              />
+              <Text
+                style={[
+                  tw`text-2xs mb-1 mt-3`,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Status
+              </Text>
+              <SegmentRow
+                options={['collected', 'pending', 'failed', 'waived']}
+                value={paymentForm.status}
+                onChange={v =>
+                  setPaymentForm(f => ({ ...f, status: v as any }))
+                }
+                colors={colors}
+              />
+              <View style={tw`mt-3`}>
+                <Text
+                  style={[tw`text-2xs mb-1`, { color: colors.textSecondary }]}
+                >
+                  Amount ({paymentForm.currency})
+                </Text>
+                <TextInput
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                  value={paymentForm.amount}
+                  onChangeText={t => setPaymentForm(f => ({ ...f, amount: t }))}
+                  style={[
+                    tw`px-3 py-2 rounded-xl`,
+                    {
+                      backgroundColor: colors.cardSecondary,
+                      color: colors.text,
+                    },
+                  ]}
+                />
+              </View>
+              <Text
+                style={[
+                  tw`text-2xs mb-1 mt-3`,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Description / Note
+              </Text>
+              <TextInput
+                placeholder="Any notes for this payment…"
+                value={paymentForm.description}
+                onChangeText={t =>
+                  setPaymentForm(f => ({ ...f, description: t }))
+                }
+                style={[
+                  tw`px-3 py-2 rounded-xl`,
+                  {
+                    backgroundColor: colors.cardSecondary,
+                    color: colors.text,
+                  },
+                ]}
+                multiline
+              />
+            </CardInput>
+            {/* {paymentRequired ? (
               <CardInput colors={colors} title="Record Payment (Required)">
-                {/* Method */}
                 <Text style={[tw`text-2xs mb-1 mt-1`, { color: colors.muted }]}>
                   Method
                 </Text>
@@ -1408,7 +1544,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   }
                   colors={colors}
                 />
-                {/* Status */}
                 <Text style={[tw`text-2xs mb-1 mt-3`, { color: colors.muted }]}>
                   Status
                 </Text>
@@ -1420,7 +1555,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   }
                   colors={colors}
                 />
-                {/* Amount */}
                 <View style={tw`mt-3`}>
                   <Text style={[tw`text-2xs mb-1`, { color: colors.muted }]}>
                     Amount ({paymentForm.currency})
@@ -1441,7 +1575,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                     ]}
                   />
                 </View>
-                {/* Optional note */}
                 <Text style={[tw`text-2xs mb-1 mt-3`, { color: colors.muted }]}>
                   Description / Note
                 </Text>
@@ -1466,23 +1599,23 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                 colors={colors}
                 text="Payment not required for this stop."
               />
-            )}
+            )} */}
 
-            {/* Inline validation errors (only show when there are any) */}
+            {/* Inline validation errors */}
             {errors.length > 0 ? (
               <View
                 style={[
                   tw`rounded-2xl p-3 mt-2`,
-                  { backgroundColor: '#2b2f3a' },
+                  { backgroundColor: colors.cardSecondary },
                 ]}
               >
                 <Text
-                  style={[tw`text-xs font-semibold mb-1`, { color: '#fecaca' }]}
+                  style={[tw`text-xs font-semibold mb-1`, { color: 'red' }]}
                 >
                   Fix before completing:
                 </Text>
                 {errors.map(e => (
-                  <Text key={e} style={tw`text-red-300 text-2xs`}>
+                  <Text key={e} style={tw`text-red-500 text-2xs`}>
                     • {e}
                   </Text>
                 ))}
@@ -1498,6 +1631,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           />
         ) : null}
       </ScrollView>
+
       {/* Footer actions */}
       {stop.status === 'arrived' ? (
         <View
@@ -1507,7 +1641,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           ]}
         >
           <TouchableOpacity
-            onPress={() => setConfirmVisible(true)} // 👈 open modal instead
+            onPress={() => setConfirmVisible(true)}
             disabled={!isValid}
             style={[
               tw`flex-1 px-3 py-2 rounded-xl flex-row items-center justify-center`,
@@ -1571,6 +1705,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           ) : null}
         </View>
       )}
+
       {/* Add Photo Picker Modal */}
       <Modal
         animationType="fade"
@@ -1621,219 +1756,206 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           </View>
         </View>
       </Modal>
+
+      {/* Confirm & Complete Modal (fixed JSX) */}
       <Modal
         animationType="fade"
         transparent
         visible={confirmVisible}
         onRequestClose={() => setConfirmVisible(false)}
       >
-        console.log('confirmVisible', confirmVisible); return (
-        <>
-          <View style={tw`flex-1 bg-black/40`}>
+        <View style={tw`flex-1 bg-black/40`}>
+          <View
+            style={[
+              tw`mt-auto rounded-t-3xl p-4 pb-6`,
+              { backgroundColor: colors.main },
+            ]}
+          >
+            {/* Header */}
+            <View style={tw`flex-row items-center mb-3`}>
+              <Text style={[tw`text-xl font-semibold`, { color: colors.text }]}>
+                Confirm Stop Completion
+              </Text>
+              <View style={tw`flex-1`} />
+              <TouchableOpacity onPress={() => setConfirmVisible(false)}>
+                <X width={22} height={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Summary card */}
             <View
               style={[
-                tw`mt-auto rounded-t-3xl p-4 pb-6`,
-                { backgroundColor: colors.main },
+                tw`rounded-2xl p-3 mb-3`,
+                { backgroundColor: colors.card },
               ]}
             >
-              {/* Header */}
-              <View style={tw`flex-row items-center mb-3`}>
-                <Text
-                  style={[tw`text-xl font-semibold`, { color: colors.text }]}
-                >
-                  Confirm Stop Completion
-                </Text>
-                <View style={tw`flex-1`} />
-                <TouchableOpacity onPress={() => setConfirmVisible(false)}>
-                  <X width={22} height={22} color={colors.text} />
-                </TouchableOpacity>
-              </View>
+              <Text
+                style={[tw`text-sm font-semibold mb-2`, { color: colors.text }]}
+              >
+                Summary
+              </Text>
 
-              {/* Summary card */}
+              <Row label="Address" value={addressLine} />
+              <Row label="Window" value={timeWindow} />
+              <Row
+                label="Invoice photos"
+                value={String(invoiceImages.length)}
+              />
+              <Row label="Other photos" value={String(otherImages.length)} />
+              <Row
+                label="Payment"
+                value={
+                  paymentRequired
+                    ? `${paymentForm.method || '—'} • ${
+                        paymentForm.status || '—'
+                      }${
+                        paymentForm.status !== 'waived' && paymentForm.amount
+                          ? ` • ${paymentForm.currency} ${paymentForm.amount}`
+                          : ''
+                      }`
+                    : 'Not required'
+                }
+              />
+              <Row
+                label="Signature"
+                value={
+                  stop.requirements?.signature
+                    ? actions.signatureImage
+                      ? 'Captured'
+                      : 'Missing'
+                    : 'N/A'
+                }
+              />
+              <Row
+                label="Printed name"
+                value={
+                  stop.requirements?.print_name
+                    ? actions.printedName?.trim()
+                      ? 'OK'
+                      : 'Missing'
+                    : 'N/A'
+                }
+              />
+              <Row
+                label="Invoice given"
+                value={
+                  stop.requirements?.give_invoice
+                    ? actions.gaveInvoiceConfirmed
+                      ? 'OK'
+                      : 'Missing'
+                    : 'N/A'
+                }
+              />
+              <Row
+                label="ID checked"
+                value={
+                  stop.requirements?.id_required
+                    ? actions.idCheckedConfirmed
+                      ? 'OK'
+                      : 'Missing'
+                    : 'N/A'
+                }
+              />
+              <Row
+                label="Contact before"
+                value={
+                  stop.requirements?.contact_before
+                    ? actions.calledContactConfirmed
+                      ? 'OK'
+                      : 'Missing'
+                    : 'N/A'
+                }
+              />
+              <Row
+                label="Contactless"
+                value={
+                  stop.requirements?.contactless
+                    ? actions.contactlessDropConfirmed
+                      ? 'OK'
+                      : 'Missing'
+                    : 'N/A'
+                }
+              />
+              <Row
+                label="Dock appt"
+                value={
+                  stop.requirements?.dock_appointment
+                    ? actions.dockApptConfirmed
+                      ? 'OK'
+                      : 'Missing'
+                    : 'N/A'
+                }
+              />
+              <Row
+                label="Temperature"
+                value={
+                  stop.requirements?.temp_control
+                    ? actions.tempReadingF != null
+                      ? `${actions.tempReadingF}°F`
+                      : 'Missing'
+                    : 'N/A'
+                }
+              />
+            </View>
+
+            {/* Errors, if any */}
+            {errors.length > 0 && (
               <View
                 style={[
                   tw`rounded-2xl p-3 mb-3`,
-                  { backgroundColor: colors.border },
+                  { backgroundColor: '#2b2f3a' },
                 ]}
               >
                 <Text
-                  style={[
-                    tw`text-sm font-semibold mb-2`,
-                    { color: colors.text },
-                  ]}
+                  style={[tw`text-xs font-semibold mb-1`, { color: '#fecaca' }]}
                 >
-                  Summary
+                  Fix these before completing:
                 </Text>
-
-                <Row label="Address" value={addressLine} />
-                <Row label="Window" value={timeWindow} />
-                <Row
-                  label="Invoice photos"
-                  value={String(invoiceImages.length)}
-                />
-                <Row label="Other photos" value={String(otherImages.length)} />
-
-                <Row
-                  label="Payment"
-                  value={
-                    paymentRequired
-                      ? `${paymentForm.method || '—'} • ${
-                          paymentForm.status || '—'
-                        }${
-                          paymentForm.status !== 'waived' && paymentForm.amount
-                            ? ` • ${paymentForm.currency} ${paymentForm.amount}`
-                            : ''
-                        }`
-                      : 'Not required'
-                  }
-                />
-
-                {/* Quick requirement ticks */}
-                <Row
-                  label="Signature"
-                  value={
-                    stop.requirements?.signature
-                      ? actions.signatureImage
-                        ? 'Captured'
-                        : 'Missing'
-                      : 'N/A'
-                  }
-                />
-                <Row
-                  label="Printed name"
-                  value={
-                    stop.requirements?.print_name
-                      ? actions.printedName?.trim()
-                        ? 'OK'
-                        : 'Missing'
-                      : 'N/A'
-                  }
-                />
-                <Row
-                  label="Invoice given"
-                  value={
-                    stop.requirements?.give_invoice
-                      ? actions.gaveInvoiceConfirmed
-                        ? 'OK'
-                        : 'Missing'
-                      : 'N/A'
-                  }
-                />
-                <Row
-                  label="ID checked"
-                  value={
-                    stop.requirements?.id_required
-                      ? actions.idCheckedConfirmed
-                        ? 'OK'
-                        : 'Missing'
-                      : 'N/A'
-                  }
-                />
-                <Row
-                  label="Contact before"
-                  value={
-                    stop.requirements?.contact_before
-                      ? actions.calledContactConfirmed
-                        ? 'OK'
-                        : 'Missing'
-                      : 'N/A'
-                  }
-                />
-                <Row
-                  label="Contactless"
-                  value={
-                    stop.requirements?.contactless
-                      ? actions.contactlessDropConfirmed
-                        ? 'OK'
-                        : 'Missing'
-                      : 'N/A'
-                  }
-                />
-                <Row
-                  label="Dock appt"
-                  value={
-                    stop.requirements?.dock_appointment
-                      ? actions.dockApptConfirmed
-                        ? 'OK'
-                        : 'Missing'
-                      : 'N/A'
-                  }
-                />
-                <Row
-                  label="Temperature"
-                  value={
-                    stop.requirements?.temp_control
-                      ? actions.tempReadingF != null
-                        ? `${actions.tempReadingF}°F`
-                        : 'Missing'
-                      : 'N/A'
-                  }
-                />
-              </View>
-
-              {/* Errors, if any */}
-              {errors.length > 0 && (
-                <View
-                  style={[
-                    tw`rounded-2xl p-3 mb-3`,
-                    { backgroundColor: '#2b2f3a' },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      tw`text-xs font-semibold mb-1`,
-                      { color: '#fecaca' },
-                    ]}
-                  >
-                    Fix these before completing:
+                {errors.map(e => (
+                  <Text key={e} style={tw`text-red-300 text-2xs`}>
+                    • {e}
                   </Text>
-                  {errors.map(e => (
-                    <Text key={e} style={tw`text-red-300 text-2xs`}>
-                      • {e}
-                    </Text>
-                  ))}
-                </View>
-              )}
-
-              {/* Actions */}
-              <View style={tw`flex-row`}>
-                <TouchableOpacity
-                  onPress={() => setConfirmVisible(false)}
-                  disabled={confirmLoading}
-                  style={[
-                    tw`flex-1 mr-2 px-3 py-3 rounded-xl items-center`,
-                    { backgroundColor: colors.border },
-                  ]}
-                >
-                  <Text style={{ color: colors.text }}>Back</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={handleConfirmAndComplete}
-                  disabled={!isValid || confirmLoading}
-                  style={[
-                    tw`flex-1 px-3 py-3 rounded-xl items-center`,
-                    {
-                      backgroundColor:
-                        !isValid || confirmLoading
-                          ? '#4b5563'
-                          : colors.brand?.primary || '#2563eb',
-                    },
-                  ]}
-                >
-                  {confirmLoading ? (
-                    <ActivityIndicator />
-                  ) : (
-                    <Text style={tw`text-white font-semibold`}>
-                      Confirm & Complete
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                ))}
               </View>
+            )}
+
+            {/* Actions */}
+            <View style={tw`flex-row`}>
+              <TouchableOpacity
+                onPress={() => setConfirmVisible(false)}
+                disabled={confirmLoading}
+                style={[
+                  tw`flex-1 mr-2 px-3 py-3 rounded-xl items-center`,
+                  { backgroundColor: colors.border },
+                ]}
+              >
+                <Text style={{ color: colors.text }}>Back</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleConfirmAndComplete}
+                disabled={!isValid || confirmLoading}
+                style={[
+                  tw`flex-1 px-3 py-3 rounded-xl items-center`,
+                  {
+                    backgroundColor:
+                      !isValid || confirmLoading
+                        ? '#4b5563'
+                        : colors.brand?.primary || '#2563eb',
+                  },
+                ]}
+              >
+                {confirmLoading ? (
+                  <ActivityIndicator />
+                ) : (
+                  <Text style={tw`text-white font-semibold`}>
+                    Confirm & Complete
+                  </Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
-        </>
-        )
+        </View>
       </Modal>
     </View>
   );
@@ -1875,7 +1997,7 @@ function haversineMiles(
 function hhmmFromMaybeISO(v?: string | null) {
   if (!v) return '';
   const d = new Date(v);
-  if (isNaN(d.getTime())) return v;
+  if (isNaN(d.getTime())) return v || '';
   let h = d.getHours();
   const m = d.getMinutes();
   const ampm = h >= 12 ? 'pm' : 'am';
@@ -1885,31 +2007,10 @@ function hhmmFromMaybeISO(v?: string | null) {
   return `${h}:${mm} ${ampm}`;
 }
 
-async function requestLocationPermission() {
-  if (Platform.OS === 'ios') {
-    const auth = await Geolocation.requestAuthorization('whenInUse');
-    return auth === 'granted';
-  }
-  return true;
-}
-
 function formatPhone(p?: string | null) {
   if (!p) return '';
   return p.replace(/[^\d+]/g, '');
 }
-
-function currency(amount: number, ccy: string) {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: ccy,
-    }).format(amount);
-  } catch {
-    return `${ccy} ${amount.toFixed(2)}`;
-  }
-}
-
-/* Small UI atoms */
 
 function Stat({
   label,
@@ -1922,9 +2023,14 @@ function Stat({
 }) {
   return (
     <View
-      style={[tw`flex-1 px-3 py-3 rounded-xl`, { backgroundColor: '#0f172a' }]}
+      style={[
+        tw`flex-1 px-3 py-3 rounded-xl`,
+        { backgroundColor: colors.border },
+      ]}
     >
-      <Text style={[tw`text-2xs`, { color: '#9CA3AF' }]}>{label}</Text>
+      <Text style={[tw`text-2xs`, { color: colors.textSecondary }]}>
+        {label}
+      </Text>
       <Text style={[tw`text-lg font-bold mt-0.5`, { color: colors.text }]}>
         {value}
       </Text>
@@ -1942,9 +2048,7 @@ function Card({
   title?: string;
 }) {
   return (
-    <View
-      style={[tw`rounded-2xl p-3 mb-3`, { backgroundColor: colors.border }]}
-    >
+    <View style={[tw`rounded-2xl p-3 mb-3`, { backgroundColor: colors.card }]}>
       {title ? (
         <Text style={[tw`text-sm font-semibold mb-2`, { color: colors.text }]}>
           {title}
@@ -1959,16 +2063,21 @@ function CardInput({
   children,
   colors,
   title,
+  required,
 }: {
   children: React.ReactNode;
   colors: any;
   title?: string;
+  required?: boolean;
 }) {
   return (
     <View
       style={[
         tw`rounded-2xl p-3 mb-3 border-2`,
-        { backgroundColor: colors.border, borderColor: colors.brand?.primary },
+        {
+          backgroundColor: colors.card,
+          borderColor: required ? colors.brand?.primary : colors.card,
+        },
       ]}
     >
       {title ? (
@@ -1992,12 +2101,18 @@ function Row({
   value: string;
   trailing?: React.ReactNode;
 }) {
+  const { colors } = useTheme();
   return (
     <View style={tw`flex-row items-center justify-between py-1.5`}>
       <View style={tw`flex-row items-center flex-1 pr-2`}>
         {icon ? <View style={tw`mr-2`}>{icon}</View> : null}
-        <Text style={tw`text-2xs text-gray-400 w-22 mr-1`}>{label}</Text>
-        <Text style={tw`text-xs flex-1 text-gray-200`} numberOfLines={2}>
+        <Text style={[tw`text-2xs w-22 mr-1`, { color: colors.textSecondary }]}>
+          {label}
+        </Text>
+        <Text
+          style={[tw`text-xs flex-1`, { color: colors.text }]}
+          numberOfLines={2}
+        >
           {value || '—'}
         </Text>
       </View>
@@ -2007,20 +2122,26 @@ function Row({
 }
 
 function KV({ label, value }: { label: string; value: string }) {
+  const { colors } = useTheme();
   return (
     <View style={tw`flex-row items-start py-1`}>
-      <Text style={tw`text-2xs text-gray-400 w-28`}>{label}</Text>
-      <Text style={tw`text-2xs text-gray-100 flex-1`}>{value}</Text>
+      <Text style={[tw`text-2xs w-28`, { color: colors.textSecondary }]}>
+        {label}
+      </Text>
+      <Text style={[tw`text-2xs flex-1`, { color: colors.textSecondary }]}>
+        {value}
+      </Text>
     </View>
   );
 }
 
 function InlineFlag({ label, active }: { label: string; active: boolean }) {
+  const { colors } = useTheme();
   return (
     <View
       style={[
         tw`px-2 py-1.5 rounded-2 mr-2 mb-2`,
-        { backgroundColor: active ? '#10B981' : '#374151' },
+        { backgroundColor: active ? colors.active : colors.inactive },
       ]}
     >
       <Text style={tw`text-white text-sm`}>{label}</Text>
@@ -2058,31 +2179,36 @@ function NoteLine({
   text,
   colors,
 }: {
-  label: string;
+  label?: string;
   text: string;
   colors: any;
 }) {
   return (
-    <View
-      style={[
-        tw`p-2 rounded-2 mt-2`,
-        { backgroundColor: colors.borderSecondary },
-      ]}
-    >
+    <View style={[tw`p-2 rounded-2 mt-2`, { backgroundColor: colors.card }]}>
       {label ? (
-        <Text style={[tw`text-sm`, { color: colors.text }]}>{label}</Text>
+        <Text style={[tw`text-sm`, { color: colors.textSecondary }]}>
+          {label}
+        </Text>
       ) : null}
-      <Text style={[tw`text-2xs`, { color: colors.text }]}>{text}</Text>
+      <Text style={[tw`text-2xs`, { color: colors.textSecondary }]}>
+        {text}
+      </Text>
     </View>
   );
 }
 
 function StopStatusChip({ status }: { status?: string }) {
+  const { colors } = useTheme();
   const meta = status ? STOP_STATUS_META[status] : undefined;
   const label = meta?.label ?? (status ? String(status) : '—');
   const bg = meta?.bg ?? '#6B7280';
   return (
-    <View style={[tw`px-2 py-0.5 rounded-full ml-2`, { backgroundColor: bg }]}>
+    <View
+      style={[
+        tw`px-2 py-1.5 rounded-full ml-2`,
+        { backgroundColor: colors.brand.primary },
+      ]}
+    >
       <Text style={tw`text-white text-2xs font-semibold`}>{label}</Text>
     </View>
   );
@@ -2103,7 +2229,7 @@ function SegmentRow({
     <View
       style={[
         tw`flex flex-row w-full items-center justify-between p-1 rounded-2`,
-        { backgroundColor: colors.borderSecondary },
+        { backgroundColor: colors.cardSecondary },
       ]}
     >
       {options.map(opt => {
@@ -2119,7 +2245,12 @@ function SegmentRow({
               },
             ]}
           >
-            <Text style={[tw`text-sm`, { color: active ? '#fff' : '#9CA3AF' }]}>
+            <Text
+              style={[
+                tw`text-sm`,
+                { color: active ? '#fff' : colors.textSecondary },
+              ]}
+            >
               {opt.toUpperCase()}
             </Text>
           </TouchableOpacity>
@@ -2129,7 +2260,6 @@ function SegmentRow({
   );
 }
 
-/** Simple grid for current bucket */
 function PhotoBucket({
   colors,
   images,
@@ -2199,7 +2329,7 @@ function ToggleRow({
       style={[
         tw`flex-row items-center justify-between mb-2`,
         {
-          backgroundColor: colors.borderSecondary,
+          backgroundColor: colors.cardSecondary,
           borderRadius: 10,
           paddingHorizontal: 12,
           paddingVertical: 8,
@@ -2210,8 +2340,4 @@ function ToggleRow({
       <Switch value={value} onValueChange={onChange} />
     </View>
   );
-}
-
-{
-  /* Confirm & Complete Modal */
 }

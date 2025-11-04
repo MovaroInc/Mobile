@@ -37,6 +37,7 @@ import {
   X as CloseIcon,
   Phone,
   Edit2,
+  ArrowLeft,
 } from 'react-native-feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -68,12 +69,14 @@ import { sendNotification } from '../../shared/lib/notifications';
 
 /* ───────────────────────── Utils ───────────────────────── */
 
-const convertToYYYYMMDD = (date: string) => {
-  const [day, month, year] = date.split('/');
-  return `${year}-${month}-${day}`;
-};
+function todayLocalYYYYMMDD(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
-const selectedDate = convertToYYYYMMDD(new Date().toLocaleDateString());
+const selectedDate = todayLocalYYYYMMDD();
 
 function toHHmm(d: Date) {
   const h = `${d.getHours()}`.padStart(2, '0');
@@ -161,7 +164,6 @@ export default function EditRouteStopsScreen() {
   const nav = useNavigation<any>();
   const { params } = useRoute<any>();
   const { routeId, payload } = params as RouteParams;
-  console.log('payload', payload);
 
   const [stops, setStops] = useState<Stop[]>([]);
   const [loading, setLoading] = useState(false);
@@ -347,7 +349,6 @@ export default function EditRouteStopsScreen() {
 
         const currentEmpId = payload.employee_id ?? route?.employee_id ?? null;
         const cur = list.find((d: any) => d.id === currentEmpId) ?? null;
-        console.log('cur', cur);
         setSelectedDriver(cur);
       } catch {}
     })();
@@ -468,7 +469,7 @@ export default function EditRouteStopsScreen() {
       const payloadToCreate = {
         route_id: route.id,
         business_id: business.id,
-        stop_type: 'baae', // marker for your backend (was 'baae' earlier)
+        stop_type: 'base', // marker for your backend (was 'baae' earlier)
         depot_role: 'end', // optional semantic
         customer_id: null,
         vendor_id: null,
@@ -610,12 +611,7 @@ export default function EditRouteStopsScreen() {
         stops: stopsPayload,
       };
 
-      console.log('optimizeFullRoute payload:', payloadToOptimize);
       const res = await createOptimizedRoute(payloadToOptimize);
-      console.log(
-        'optimizeFullRoute result:',
-        JSON.stringify(res.data, null, 2),
-      );
 
       if (!res?.success) {
         Alert.alert(
@@ -688,7 +684,6 @@ export default function EditRouteStopsScreen() {
       return;
     }
     setPublishing(true);
-    console.log('publish date', selectedDate);
     try {
       const resp = await publishRouteWithStops(routeId, {
         status: 'dispatched',
@@ -710,7 +705,6 @@ export default function EditRouteStopsScreen() {
     // NOTE: The original code used 'invite.business_id', but the context was 'business.id'.
     // I'm using 'invite.business_id' as provided in your prompt, but verify this is correct.
     const admin = await getBusinessAdmin(business?.id ?? 0);
-    console.log('admin list', admin);
 
     if (admin.data.length > 0) {
       // 1. FILTER: First, filter the admin data to only include those with a valid apns_token.
@@ -722,7 +716,6 @@ export default function EditRouteStopsScreen() {
 
       // 2. MAP: Then, create an array of Promises only for the filtered admins.
       const sendPromises = adminsWithToken.map(async (a: any) => {
-        console.log('admin found', a);
         const token = a.profile.device[0].apns_token;
 
         const payload = {
@@ -807,15 +800,16 @@ export default function EditRouteStopsScreen() {
       style={[tw`flex-1`, { backgroundColor: colors.bg }]}
     >
       {/* Top bar */}
-      <View style={tw`px-2 pt-4 pb-3 flex-row items-center`}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <ChevronLeft width={24} height={24} color={colors.text} />
+      <View style={tw`px-4 pt-4 pb-3 flex-row items-center`}>
+        <TouchableOpacity
+          onPress={() => nav.goBack()}
+          style={[tw`p-2 rounded-lg mr-2`, { backgroundColor: colors.button }]}
+        >
+          <ArrowLeft width={18} height={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <View style={tw`pl-2`}>
-          <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
-            Edit Route Stops
-          </Text>
-        </View>
+        <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
+          Edit Route
+        </Text>
       </View>
 
       <View style={tw`flex-1`}>
@@ -829,7 +823,7 @@ export default function EditRouteStopsScreen() {
               <View
                 style={[
                   tw`rounded-2xl p-3 mb-3`,
-                  { backgroundColor: colors.border },
+                  { backgroundColor: colors.card },
                 ]}
               >
                 <View style={tw`flex-row items-center justify-between`}>
@@ -843,15 +837,18 @@ export default function EditRouteStopsScreen() {
                   </Text>
                   <TouchableOpacity
                     onPress={() => {
-                      console.log('route', JSON.stringify(route, null, 2));
                       nav.navigate('EditRouteScreen', { route });
                     }}
                     style={[
                       tw`ml-2 rounded-lg p-2`,
-                      { backgroundColor: colors.main },
+                      { backgroundColor: colors.button },
                     ]}
                   >
-                    <Edit2 width={14} height={14} color={colors.text} />
+                    <Edit3
+                      width={14}
+                      height={14}
+                      color={colors.textSecondary}
+                    />
                   </TouchableOpacity>
                 </View>
 
@@ -971,7 +968,7 @@ export default function EditRouteStopsScreen() {
                 <View
                   style={[
                     tw`rounded-2xl mb-3 p-3`,
-                    { backgroundColor: colors.border },
+                    { backgroundColor: colors.card },
                   ]}
                 >
                   <View style={tw`flex-row items-center justify-between`}>
@@ -989,12 +986,25 @@ export default function EditRouteStopsScreen() {
                     <View style={tw`flex-row`}>
                       <TouchableOpacity
                         onPress={() => openEdit(item)}
-                        style={tw`mr-2`}
+                        style={[
+                          tw`ml-2 rounded-lg p-2`,
+                          { backgroundColor: colors.button },
+                        ]}
                       >
-                        <Edit3 width={18} height={18} color={colors.text} />
+                        <Edit3
+                          width={14}
+                          height={14}
+                          color={colors.textSecondary}
+                        />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => confirmDelete(item)}>
-                        <Trash2 width={18} height={18} color="#ef4444" />
+                      <TouchableOpacity
+                        onPress={() => confirmDelete(item)}
+                        style={[
+                          tw`ml-2 rounded-lg p-2`,
+                          { backgroundColor: colors.button },
+                        ]}
+                      >
+                        <Trash2 width={14} height={14} color={'red'} />
                       </TouchableOpacity>
                     </View>
                   </View>

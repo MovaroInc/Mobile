@@ -347,8 +347,6 @@ export default function BillingSetupScreen() {
         couponCode: couponForTerm(billing),
       };
 
-      console.log('payload', JSON.stringify(payload, null, 2));
-
       const res = await api.post<CreateSubResponse>(
         '/billing/create-subscription',
         payload,

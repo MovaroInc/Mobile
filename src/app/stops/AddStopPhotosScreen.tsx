@@ -50,18 +50,6 @@ export default function AddStopPhotosScreen() {
 
   const { params } = useRoute<any>();
   const { routeId, stopsCount } = (params || {}) as RouteParams;
-  console.log('stopsCount', stopsCount);
-  console.log('routeId', routeId);
-
-  useEffect(() => {
-    const getStep2Payload = async () => {
-      const step1Payload = await AsyncStorage.getItem('step1Payload');
-      console.log('step1Payload', JSON.parse(step1Payload || '{}'));
-      const step2Payload = await AsyncStorage.getItem('step2Payload');
-      console.log('step2Payload', JSON.parse(step2Payload || '{}'));
-    };
-    getStep2Payload();
-  }, []);
 
   // One empty slot by default in each section
   const [invoiceImgs, setInvoiceImgs] = useState<LocalImg[]>([{ uri: null }]);
@@ -83,16 +71,6 @@ export default function AddStopPhotosScreen() {
     section: PhotoCategory;
     index: number;
   }>(null);
-
-  useEffect(() => {
-    console.log('invoiceImgs', invoiceImgs);
-    console.log('otherImgs', otherImgs);
-  }, [invoiceImgs, otherImgs]);
-
-  useEffect(() => {
-    console.log('invoiceUploading', invoiceUploading);
-    console.log('otherImgs', otherUploading);
-  }, [invoiceUploading, otherUploading]);
 
   const openPickerFor = (section: PhotoCategory, index: number) =>
     setPickerTarget({ section, index });
@@ -247,8 +225,6 @@ export default function AddStopPhotosScreen() {
         metadata: { originalName: asset.fileName ?? null },
       });
 
-      console.log('photoRes', photoRes);
-
       // 5) reflect downloadable url for the checkmark
       setDownloadUrl(section, index, uploadedUrl);
     } catch (e: any) {
@@ -263,7 +239,6 @@ export default function AddStopPhotosScreen() {
 
   const updateStatus = async () => {
     try {
-      console.log('photos', invoiceImgs, otherImgs);
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Unable to update stop status.');
     }

@@ -83,7 +83,6 @@ const SignupBusinessScreen = () => {
       },
     };
     const customerPosition = await axios.request(options);
-    console.log(customerPosition);
     setLatitude(parseFloat(customerPosition.data.latitude));
     setLongitude(parseFloat(customerPosition.data.longitude));
   };

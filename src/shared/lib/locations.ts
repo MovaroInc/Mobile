@@ -276,3 +276,50 @@ export async function openSystemLocationServices(): Promise<void> {
     await openAppSettings();
   }
 }
+
+// src/shared/utils/distance.ts
+export const MI_IN_METERS = 1609.344;
+
+export type LatLng = { latitude: number; longitude: number };
+
+function toRad(n: number) {
+  return (n * Math.PI) / 180;
+}
+
+/** Great-circle distance in meters (Haversine). */
+export function haversineMeters(a: LatLng, b: LatLng): number {
+  const R = 6371000; // mean Earth radius in meters
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const la1 = toRad(a.latitude);
+  const la2 = toRad(b.latitude);
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Check if current location is within 1 mile (~1609.344 m) of the route start.
+ * Returns the raw distances so you can display them if needed.
+ */
+export function isWithinOneMile(
+  current: LatLng,
+  start: LatLng,
+): { within: boolean; distanceMeters: number; distanceMiles: number } {
+  if (
+    !isFinite(current?.latitude) ||
+    !isFinite(current?.longitude) ||
+    !isFinite(start?.latitude) ||
+    !isFinite(start?.longitude)
+  ) {
+    return { within: false, distanceMeters: NaN, distanceMiles: NaN };
+    // (alternatively throw an Error if you prefer)
+  }
+
+  const distanceMeters = haversineMeters(current, start);
+  const distanceMiles = distanceMeters / MI_IN_METERS;
+  return { within: distanceMiles <= 1, distanceMeters, distanceMiles };
+}
