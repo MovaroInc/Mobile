@@ -2,7 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- App identity -->
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
@@ -26,7 +25,7 @@
   <key>LSRequiresIPhoneOS</key>
   <true/>
 
-  <!-- Network / ATS -->
+  <!-- Networking -->
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsArbitraryLoads</key>
@@ -35,26 +34,25 @@
     <true/>
   </dict>
 
-  <!-- Privacy usage strings -->
+  <!-- Privacy -->
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>Allow Movaro to use Bluetooth to connect to your devices.</string>
   <key>NSCameraUsageDescription</key>
-  <string>Allow Movaro to use the camera to take stop photos and invoices.</string>
-
+  <string>Allow Movaro to use the camera to take photos of invoices, products, and proof of payment.</string>
+  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+  <string>Movaro needs background location while you’re clocked in to track active routes and distance.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Movaro uses your location to show your position on the map and navigate to stops.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>Allow Movaro to save photos to your library.</string>
   <key>NSPhotoLibraryUsageDescription</key>
   <string>Allow Movaro to access your photo library to select images.</string>
 
-  <key>NSPhotoLibraryAddUsageDescription</key>
-  <string>Allow Movaro to save photos to your library.</string>
+  <!-- New Architecture -->
+  <key>RCTNewArchEnabled</key>
+  <true/>
 
-  <!-- Location (foreground) -->
-  <key>NSLocationWhenInUseUsageDescription</key>
-  <string>We use your location to show and navigate today’s stops.</string>
-
-  <!-- Location (background / Always). 
-       Keep this ONLY if you actually request LOCATION_ALWAYS in your app. -->
-  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-  <string>We track routes in the background to support active deliveries while you’re clocked in.</string>
-
-  <!-- Background modes (include "location" only if you truly run background updates) -->
+  <!-- Background Modes -->
   <key>UIBackgroundModes</key>
   <array>
     <string>location</string>
@@ -62,28 +60,35 @@
     <string>remote-notification</string>
   </array>
 
-  <!-- UI -->
+  <!-- Launch Screen -->
   <key>UILaunchStoryboardName</key>
   <string>LaunchScreen</string>
+
+  <!-- Device Capabilities -->
   <key>UIRequiredDeviceCapabilities</key>
   <array>
     <string>arm64</string>
   </array>
+
+  <!-- Status Bar -->
+  <key>UIStatusBarStyle</key>
+  <string></string>
+  <key>UIViewControllerBasedStatusBarAppearance</key>
+  <false/>
+
+  <!-- iPhone orientations (portrait-only is OK) -->
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
   </array>
+
+  <!-- iPad MUST include all four for multitasking -->
   <key>UISupportedInterfaceOrientations~ipad</key>
   <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
     <string>UIInterfaceOrientationLandscapeLeft</string>
     <string>UIInterfaceOrientationLandscapeRight</string>
-    <string>UIInterfaceOrientationPortrait</string>
   </array>
-  <key>UIViewControllerBasedStatusBarAppearance</key>
-  <false/>
-
-  <!-- RN new architecture flag (keep as you had it) -->
-  <key>RCTNewArchEnabled</key>
-  <true/>
 </dict>
 </plist>
