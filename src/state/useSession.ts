@@ -1,14 +1,17 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { MMKV } from 'react-native-mmkv';
+// 1. REMOVE MMKV Import and ADD AsyncStorage Import
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../shared/lib/api';
 
-const kv = new MMKV({ id: 'movaro-session' });
-const mmkvStorage = {
-  getItem: (k: string) => kv.getString(k) ?? null,
-  setItem: (k: string, v: string) => kv.set(k, v),
-  removeItem: (k: string) => kv.delete(k),
-};
+// 2. REMOVE MMKV initialization and custom storage object
+// const kv = new MMKV({ id: 'movaro-session' });
+// const mmkvStorage = {
+//   getItem: (k: string) => kv.getString(k) ?? null,
+//   setItem: (k: string, v: string) => kv.set(k, v),
+//   removeItem: (k: string) => kv.delete(k),
+// };
+// --------------------------------------------------------
 
 export type AuthStatus = 'unknown' | 'signedOut' | 'signedIn';
 
@@ -147,7 +150,8 @@ export const useSession = create<SessionState>()(
     }),
     {
       name: 'movaro/session',
-      storage: createJSONStorage(() => mmkvStorage),
+      // 3. Update the storage configuration to use AsyncStorage directly
+      storage: createJSONStorage(() => AsyncStorage),
       partialize: s => ({
         status: s.status,
         bootstrapped: s.bootstrapped,
