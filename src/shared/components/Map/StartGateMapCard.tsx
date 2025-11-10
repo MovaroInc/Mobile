@@ -14,14 +14,14 @@ import {
   Linking,
   Platform,
 } from 'react-native';
-import MapboxGL from '@rnmapbox/maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import tw from 'twrnc';
 import { getOneFix, isWithinOneMile } from '../../lib/locations';
 
 type LatLng = { latitude: number; longitude: number };
 
 type Props = {
-  /** Mapbox access token */
+  /** Mapbox access token (used for directions API only) */
   token: string;
   /** Route start point (base) */
   start: LatLng;
@@ -44,23 +44,10 @@ type Props = {
 };
 
 type DirectionsRoute = {
-  geometry: GeoJSON.LineString;
+  coordinates: LatLng[]; // converted from GeoJSON [lng,lat]
   distance: number; // meters
   duration: number; // seconds
 };
-
-// Minimal GeoJSON namespace if not available
-declare global {
-  namespace GeoJSON {
-    interface Geometry {
-      type: string;
-    }
-    interface LineString extends Geometry {
-      type: 'LineString';
-      coordinates: number[][];
-    }
-  }
-}
 
 export default function StartGateMapCard({
   token,
@@ -79,12 +66,8 @@ export default function StartGateMapCard({
     null,
   );
 
-  const cameraRef = useRef<MapboxGL.Camera>(null);
+  const mapRef = useRef<MapView>(null);
   const pollRef = useRef<NodeJS.Timer | null>(null);
-
-  useEffect(() => {
-    MapboxGL.setAccessToken(token);
-  }, [token]);
 
   const readFix = useCallback(async (): Promise<LatLng> => {
     const snap = await getOneFix();
@@ -105,10 +88,16 @@ export default function StartGateMapCard({
       if (!res.ok) throw new Error(`Directions failed (${res.status})`);
       const json = await res.json();
       const best = json?.routes?.[0];
-      if (!best?.geometry) throw new Error('No route found');
+      const geom = best?.geometry;
+      if (!geom?.coordinates?.length) throw new Error('No route found');
+
+      // convert [lng,lat] -> { latitude, longitude }
+      const coords: LatLng[] = geom.coordinates.map(
+        (c: [number, number]): LatLng => ({ longitude: c[0], latitude: c[1] }),
+      );
 
       return {
-        geometry: best.geometry,
+        coordinates: coords,
         distance: best.distance,
         duration: best.duration,
       };
@@ -118,15 +107,14 @@ export default function StartGateMapCard({
 
   const fitCamera = useCallback(
     (cur: LatLng) => {
-      const ne = {
-        lat: Math.max(cur.latitude, start.latitude),
-        lon: Math.max(cur.longitude, start.longitude),
-      };
-      const sw = {
-        lat: Math.min(cur.latitude, start.latitude),
-        lon: Math.min(cur.longitude, start.longitude),
-      };
-      cameraRef.current?.fitBounds([sw.lon, sw.lat], [ne.lon, ne.lat], 60, 500);
+      const coords = [
+        { latitude: cur.latitude, longitude: cur.longitude },
+        { latitude: start.latitude, longitude: start.longitude },
+      ];
+      mapRef.current?.fitToCoordinates(coords, {
+        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+        animated: true,
+      });
     },
     [start.latitude, start.longitude],
   );
@@ -167,10 +155,9 @@ export default function StartGateMapCard({
 
   /** Lightweight proximity polling (does not call Directions each time) */
   useEffect(() => {
-    // floor to 2s to avoid spammy timers
     const period = Math.max(2000, pollMs);
 
-    // do one light check immediately
+    // immediate light check
     (async () => {
       try {
         const cur = await readFix();
@@ -178,12 +165,10 @@ export default function StartGateMapCard({
         const w = isWithinOneMile(cur, start);
         const notWithin = !w.within;
         setNotWithinOneMile(prev => (prev !== notWithin ? notWithin : prev));
-        if (onResolved) {
-          onResolved(notWithin, {
-            current: cur,
-            distanceMiles: w.distanceMiles,
-          });
-        }
+        onResolved?.(notWithin, {
+          current: cur,
+          distanceMiles: w.distanceMiles,
+        });
       } catch {
         /* ignore */
       }
@@ -264,6 +249,16 @@ export default function StartGateMapCard({
     })();
   }, [start.latitude, start.longitude, startLabel]);
 
+  const initialRegion = useMemo(() => {
+    const delta = 0.06;
+    return {
+      latitude: start.latitude,
+      longitude: start.longitude,
+      latitudeDelta: delta,
+      longitudeDelta: delta,
+    };
+  }, [start.latitude, start.longitude]);
+
   return (
     <View style={[tw`rounded-2xl overflow-hidden`]}>
       {notWithinOneMile === true ? (
@@ -292,37 +287,25 @@ export default function StartGateMapCard({
       ) : null}
 
       <View style={{ height: 240, backgroundColor: colors.borderSecondary }}>
-        <MapboxGL.MapView
-          style={{ flex: 1 }}
-          styleURL={MapboxGL.StyleURL.Dark}
+        <MapView
+          ref={mapRef}
+          style={tw`flex-1`}
+          initialRegion={initialRegion}
+          showsCompass
+          toolbarEnabled={false}
           rotateEnabled={false}
-          logoEnabled={false}
-          compassEnabled={false}
         >
-          <MapboxGL.Camera
-            ref={cameraRef as any}
-            zoomLevel={12}
-            centerCoordinate={[start.longitude, start.latitude]}
-          />
-
           {/* Route line */}
-          {dir?.geometry ? (
-            <MapboxGL.ShapeSource
-              id="route"
-              shape={{ type: 'Feature', geometry: dir.geometry } as any}
-            >
-              <MapboxGL.LineLayer
-                id="route-line"
-                style={{ lineWidth: 4, lineOpacity: 0.9, lineColor: '#3B82F6' }}
-              />
-            </MapboxGL.ShapeSource>
+          {dir?.coordinates?.length ? (
+            <Polyline
+              coordinates={dir.coordinates}
+              strokeWidth={4}
+              strokeColor="#3B82F6"
+            />
           ) : null}
 
           {/* Start pin */}
-          <MapboxGL.PointAnnotation
-            id="start"
-            coordinate={[start.longitude, start.latitude]}
-          >
+          <Marker coordinate={start}>
             <View
               style={[
                 tw`w-4 h-4 rounded-full`,
@@ -333,14 +316,11 @@ export default function StartGateMapCard({
                 },
               ]}
             />
-          </MapboxGL.PointAnnotation>
+          </Marker>
 
           {/* Current pin */}
           {current ? (
-            <MapboxGL.PointAnnotation
-              id="me"
-              coordinate={[current.longitude, current.latitude]}
-            >
+            <Marker coordinate={current}>
               <View
                 style={[
                   tw`w-4 h-4 rounded-full`,
@@ -351,9 +331,9 @@ export default function StartGateMapCard({
                   },
                 ]}
               />
-            </MapboxGL.PointAnnotation>
+            </Marker>
           ) : null}
-        </MapboxGL.MapView>
+        </MapView>
 
         {loading ? (
           <View style={tw`absolute inset-0 items-center justify-center`}>
@@ -410,6 +390,8 @@ export default function StartGateMapCard({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* Uncomment if/when you enable force clock-in here */}
             {/* <TouchableOpacity
               onPress={forceClockIn}
               style={[

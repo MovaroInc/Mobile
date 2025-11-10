@@ -22,7 +22,7 @@ import {
   PermissionsAndroid,
 } from 'react-native';
 import tw from 'twrnc';
-import MapboxGL from '@rnmapbox/maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import {
   Navigation as NavIcon,
   Phone,
@@ -51,16 +51,16 @@ import {
 } from '../../shared/lib/ImageHelpers';
 import { useSession } from '../../state/useSession';
 import { getBusinessAdmin } from '../../shared/lib/BusinessHelpers';
-// If you already have a Notifications helper, keep this import.
-// Otherwise stub the function or adjust createNotification accordingly.
 import { sendNotification } from '../../shared/lib/notifications';
 import { getOneFix } from '../../shared/lib/locations';
 
 const DevMode = true;
 
-const MAPBOX_TOKEN =
-  'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A';
-MapboxGL.setAccessToken(MAPBOX_TOKEN);
+/**
+ * We still use Mapbox Directions HTTP API to fetch a route (no SDK needed).
+ * Replace with your token.
+ */
+const MAPBOX_TOKEN = '<YOUR_MAPBOX_TOKEN>';
 
 const STOP_STATUS_META: Record<string, { label: string; bg: string }> = {
   scheduled: { label: 'Scheduled', bg: '#6B7280' },
@@ -103,6 +103,8 @@ type Requirements = {
   notes?: string | null;
   parking?: string | null;
   entrance?: string | null;
+  /** used elsewhere in your code */
+  collect_payment?: boolean;
 };
 
 type Photo = {
@@ -163,7 +165,7 @@ type Props = {
 const TWO_MILES = 2;
 const DEFAULT_AVG_MPH = 25;
 
-/** New: image item shape for the two buckets */
+/** image item shape for the two buckets */
 type imageItem = {
   id: string;
   uri?: string;
@@ -197,7 +199,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
   // Location & routing
   const [current, setCurrent] = useState<LatLng | null>(null);
   const [watchId, setWatchId] = useState<number | null>(null);
-  const [routeShape, setRouteShape] = useState<any | null>(null);
+  const [routePoints, setRoutePoints] = useState<LatLng[] | null>(null);
   const [routeDistanceM, setRouteDistanceM] = useState<number | null>(null);
   const [routeDurationS, setRouteDurationS] = useState<number | null>(null);
   const lastOriginRef = useRef<LatLng | null>(null);
@@ -219,12 +221,12 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
 
   const [signatureCollected, setSignatureCollected] = useState(false);
 
-  // ✅ Two image buckets
+  // Two image buckets
   const [invoiceImages, setInvoiceImages] = useState<imageItem[]>([]);
   const [otherImages, setOtherImages] = useState<imageItem[]>([]);
   const [adminPhotos, setAdminPhotos] = useState<imageItem[]>([]);
 
-  // ✅ Actionable requirement inputs
+  // Actionable requirement inputs
   const [actions, setActions] = useState<ActionState>({});
 
   // Payment form
@@ -252,7 +254,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
   });
 
   // Map helpers
-  const cameraRef = useRef<MapboxGL.Camera>(null);
+  const cameraRef = useRef<MapView>(null);
   const dest: LatLng | null = useMemo(() => {
     if (
       typeof stop?.latitude === 'number' &&
@@ -369,7 +371,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     }
   }
 
-  // ───────── boot: permission → one fix → route; then optional watch ─────────
+  // boot: permission → one fix → route; then optional watch
   useEffect(() => {
     let cancelled = false;
 
@@ -432,7 +434,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     }
   };
 
-  // keep your original watch logic, but only start it after first success
+  // watch after first success
   const requestAndWatchLocation = async () => {
     try {
       const granted = await ensureLocationPermission();
@@ -460,7 +462,19 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     }
   };
 
-  // ───────── Mapbox Directions (hardened) ─────────
+  // ───────── Directions (HTTP) → RN Maps polyline ─────────
+  function coordsToLatLng(points: number[][]): LatLng[] {
+    return points.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
+  }
+
+  function fitToPoints(points: LatLng[]) {
+    if (!cameraRef.current || !points?.length) return;
+    cameraRef.current.fitToCoordinates(points, {
+      edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+      animated: true,
+    });
+  }
+
   const getRoute = async (
     originLng: number,
     originLat: number,
@@ -471,67 +485,38 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
       setRouteErr(null);
       setRouting(true);
 
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${originLng},${originLat};${destLng},${destLat}?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`;
+      const url =
+        `https://api.mapbox.com/directions/v5/mapbox/driving/` +
+        `${originLng},${originLat};${destLng},${destLat}` +
+        `?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`;
       const res = await fetch(url);
       const json = await res.json();
 
       const route = json?.routes?.[0];
       if (route?.geometry?.coordinates?.length) {
-        const fc = {
-          type: 'FeatureCollection' as const,
-          features: [
-            {
-              type: 'Feature' as const,
-              properties: {},
-              geometry: {
-                type: 'LineString' as const,
-                coordinates: route.geometry.coordinates,
-              },
-            },
-          ],
-        };
-        setRouteShape(fc);
+        const points = coordsToLatLng(route.geometry.coordinates as number[][]);
+        setRoutePoints(points);
         setRouteDistanceM(
           typeof route.distance === 'number' ? route.distance : null,
         );
         setRouteDurationS(
           typeof route.duration === 'number' ? route.duration : null,
         );
-
-        const [minLng, minLat, maxLng, maxLat] = bboxFromCoordinates(
-          route.geometry.coordinates,
-        );
-        if (cameraRef.current) {
-          cameraRef.current.fitBounds(
-            [minLng, minLat],
-            [maxLng, maxLat],
-            50,
-            900,
-          );
-        }
+        fitToPoints(points);
       } else {
-        setRouteShape(null);
+        setRoutePoints(null);
         setRouteDistanceM(null);
         setRouteDurationS(null);
         setRouteErr('No route found.');
-
-        if (cameraRef.current) {
-          const minLat = Math.min(originLat, destLat);
-          const maxLat = Math.max(originLat, destLat);
-          const minLng = Math.min(originLng, destLng);
-          const maxLng = Math.max(originLng, destLng);
-          cameraRef.current.fitBounds(
-            [minLng, minLat],
-            [maxLng, maxLat],
-            50,
-            800,
-          );
-        }
+        fitToPoints([
+          { latitude: originLat, longitude: originLng },
+          { latitude: destLat, longitude: destLng },
+        ]);
       }
     } catch (e) {
       console.warn('Directions fetch failed', e);
       setRouteErr('Unable to fetch route.');
-      setRouteShape(null);
+      setRoutePoints(null);
       setRouteDistanceM(null);
       setRouteDurationS(null);
     } finally {
@@ -539,12 +524,12 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     }
   };
 
-  // manual refresh: force permission → fix → route
+  // manual refresh
   const refreshLocationAndRoute = useCallback(async () => {
     await ensureCurrentThenRoute();
   }, [dest?.latitude, dest?.longitude]);
 
-  // ───────── navigation intent ─────────
+  // navigation intent
   const navigateTo = async () => {
     if (!dest) return Alert.alert('Missing destination coordinates');
     const label = encodeURIComponent(stop.business_name || 'Destination');
@@ -574,7 +559,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     }
   };
 
-  // ───────── arrival & status ─────────
+  // arrival & status
   const [showAll, setShowAll] = useState<boolean>(false);
   const canShowPhotos = radiusGateOk || showAll;
 
@@ -630,7 +615,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     return true;
   };
 
-  // ───────── photos: add/remove/upload ─────────
+  // photos: add/remove/upload
   const openPickerFor = (bucket: 'invoice' | 'other') => {
     if (!(radiusGateOk || stop.status === 'arrived')) {
       Alert.alert(
@@ -796,7 +781,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     }
   };
 
-  // ───────── VALIDATION ─────────
+  // VALIDATION
   const { isValid, errors, paymentRequired } = useMemo(() => {
     const errs: string[] = [];
     const r = stop.requirements || {};
@@ -904,19 +889,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
               {stop.stop_type ? stop.stop_type.toUpperCase() : 'STOP'} · Seq{' '}
               {stop.sequence ?? '—'}
             </Text>
-            {/* {DevMode && (
-              <TouchableOpacity
-                onPress={() => setDevBypassRadius(v => !v)}
-                style={[
-                  tw`px-2 py-1 rounded-full`,
-                  { backgroundColor: devBypassRadius ? '#EF4444' : '#10B981' },
-                ]}
-              >
-                <Text style={tw`text-white text-2xs font-bold`}>
-                  {devBypassRadius ? 'DEV: 2mi Gate OFF' : 'DEV: 2mi Gate ON'}
-                </Text>
-              </TouchableOpacity>
-            )} */}
           </View>
         </View>
       </View>
@@ -930,44 +902,42 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
               { height: 200, backgroundColor: colors.border },
             ]}
           >
-            <MapboxGL.MapView
+            <MapView
+              ref={cameraRef}
               style={tw`flex-1`}
-              styleURL="mapbox://styles/mapbox/streets-v12"
-              logoEnabled={false}
-              compassEnabled
+              initialRegion={initialRegionFrom(dest, current ?? undefined)}
+              showsUserLocation={!!current}
+              showsCompass
+              toolbarEnabled={false}
             >
-              <MapboxGL.Camera
-                ref={cameraRef}
-                zoomLevel={12}
-                centerCoordinate={
-                  dest ? [dest.longitude, dest.latitude] : [-118.2437, 34.0522]
-                }
-              />
               {current ? (
-                <MapboxGL.PointAnnotation
-                  id="me"
-                  coordinate={[current.longitude, current.latitude]}
+                <Marker
+                  coordinate={{
+                    latitude: current.latitude,
+                    longitude: current.longitude,
+                  }}
+                  title="You"
                 />
               ) : null}
+
               {dest ? (
-                <MapboxGL.PointAnnotation
-                  id="dest"
-                  coordinate={[dest.longitude, dest.latitude]}
+                <Marker
+                  coordinate={{
+                    latitude: dest.latitude,
+                    longitude: dest.longitude,
+                  }}
+                  title={stop.business_name || 'Destination'}
                 />
               ) : null}
-              {routeShape ? (
-                <MapboxGL.ShapeSource id="route" shape={routeShape}>
-                  <MapboxGL.LineLayer
-                    id="routeLine"
-                    style={{
-                      lineColor: '#2563eb',
-                      lineWidth: 4,
-                      lineOpacity: 0.9,
-                    }}
-                  />
-                </MapboxGL.ShapeSource>
+
+              {routePoints?.length ? (
+                <Polyline
+                  coordinates={routePoints}
+                  strokeWidth={4}
+                  strokeColor="#2563eb"
+                />
               ) : null}
-            </MapboxGL.MapView>
+            </MapView>
 
             {/* Status pill */}
             <View
@@ -1020,8 +990,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
               <Text style={tw`text-white text-xs font-semibold`}>Navigate</Text>
             </TouchableOpacity>
           </View>
-
-          {/* tiny debug line */}
         </View>
       )}
 
@@ -1523,83 +1491,11 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                 }
                 style={[
                   tw`px-3 py-2 rounded-xl`,
-                  {
-                    backgroundColor: colors.cardSecondary,
-                    color: colors.text,
-                  },
+                  { backgroundColor: colors.cardSecondary, color: colors.text },
                 ]}
                 multiline
               />
             </CardInput>
-            {/* {paymentRequired ? (
-              <CardInput colors={colors} title="Record Payment (Required)">
-                <Text style={[tw`text-2xs mb-1 mt-1`, { color: colors.muted }]}>
-                  Method
-                </Text>
-                <SegmentRow
-                  options={['cash', 'card', 'check', 'zelle', 'other']}
-                  value={paymentForm.method}
-                  onChange={v =>
-                    setPaymentForm(f => ({ ...f, method: v as any }))
-                  }
-                  colors={colors}
-                />
-                <Text style={[tw`text-2xs mb-1 mt-3`, { color: colors.muted }]}>
-                  Status
-                </Text>
-                <SegmentRow
-                  options={['collected', 'pending', 'failed', 'waived']}
-                  value={paymentForm.status}
-                  onChange={v =>
-                    setPaymentForm(f => ({ ...f, status: v as any }))
-                  }
-                  colors={colors}
-                />
-                <View style={tw`mt-3`}>
-                  <Text style={[tw`text-2xs mb-1`, { color: colors.muted }]}>
-                    Amount ({paymentForm.currency})
-                  </Text>
-                  <TextInput
-                    keyboardType="decimal-pad"
-                    placeholder="0.00"
-                    value={paymentForm.amount}
-                    onChangeText={t =>
-                      setPaymentForm(f => ({ ...f, amount: t }))
-                    }
-                    style={[
-                      tw`px-3 py-2 rounded-xl`,
-                      {
-                        backgroundColor: colors.borderSecondary,
-                        color: colors.text,
-                      },
-                    ]}
-                  />
-                </View>
-                <Text style={[tw`text-2xs mb-1 mt-3`, { color: colors.muted }]}>
-                  Description / Note
-                </Text>
-                <TextInput
-                  placeholder="Any notes for this payment…"
-                  value={paymentForm.description}
-                  onChangeText={t =>
-                    setPaymentForm(f => ({ ...f, description: t }))
-                  }
-                  style={[
-                    tw`px-3 py-2 rounded-xl`,
-                    {
-                      backgroundColor: colors.borderSecondary,
-                      color: colors.text,
-                    },
-                  ]}
-                  multiline
-                />
-              </CardInput>
-            ) : (
-              <InfoBanner
-                colors={colors}
-                text="Payment not required for this stop."
-              />
-            )} */}
 
             {/* Inline validation errors */}
             {errors.length > 0 ? (
@@ -1757,7 +1653,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
         </View>
       </Modal>
 
-      {/* Confirm & Complete Modal (fixed JSX) */}
+      {/* Confirm & Complete Modal */}
       <Modal
         animationType="fade"
         transparent
@@ -1963,18 +1859,15 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
 
 /* ───────── helpers & small UI ───────── */
 
-function bboxFromCoordinates(coords: number[][]) {
-  let minLng = Infinity,
-    minLat = Infinity,
-    maxLng = -Infinity,
-    maxLat = -Infinity;
-  for (const [lng, lat] of coords) {
-    if (lng < minLng) minLng = lng;
-    if (lat < minLat) minLat = lat;
-    if (lng > maxLng) maxLng = lng;
-    if (lat > maxLat) maxLat = lat;
-  }
-  return [minLng, minLat, maxLng, maxLat] as const;
+function initialRegionFrom(dest?: LatLng | null, fallback?: LatLng) {
+  const center = dest ??
+    fallback ?? { latitude: 34.0522, longitude: -118.2437 };
+  return {
+    latitude: center.latitude,
+    longitude: center.longitude,
+    latitudeDelta: 0.09,
+    longitudeDelta: 0.09,
+  };
 }
 
 function haversineMiles(
@@ -2201,7 +2094,6 @@ function StopStatusChip({ status }: { status?: string }) {
   const { colors } = useTheme();
   const meta = status ? STOP_STATUS_META[status] : undefined;
   const label = meta?.label ?? (status ? String(status) : '—');
-  const bg = meta?.bg ?? '#6B7280';
   return (
     <View
       style={[

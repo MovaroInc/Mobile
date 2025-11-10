@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import tw from 'twrnc';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import MapboxGL from '@rnmapbox/maps';
+import MapView, { Marker } from 'react-native-maps';
 import { Phone, ArrowLeft, RefreshCcw } from 'react-native-feather';
 
 import { useTheme } from '../../shared/hooks/useTheme';
@@ -29,10 +29,6 @@ import {
   useLiveLocations,
   lastSeenText,
 } from '../../shared/hooks/useLiveLocations';
-
-MapboxGL.setAccessToken(
-  'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A',
-);
 
 /* ───────────────── types ───────────────── */
 
@@ -172,8 +168,12 @@ export default function DriverOverviewScreen() {
   const [recentStops, setRecentStops] = useState<StopSummary[]>([]);
 
   // map
-  const cameraRef = useRef<MapboxGL.Camera>(null);
-  const businessCenter = useMemo<[number, number] | null>(() => {
+  const mapRef = useRef<MapView>(null);
+
+  const businessCenter = useMemo<{
+    latitude: number;
+    longitude: number;
+  } | null>(() => {
     const lng =
       (business as any)?.longitude ??
       (business as any)?.lng ??
@@ -183,44 +183,51 @@ export default function DriverOverviewScreen() {
       (business as any)?.lat ??
       (business as any)?.hq_lat;
     return typeof lng === 'number' && typeof lat === 'number'
-      ? [lng, lat]
+      ? { longitude: lng, latitude: lat }
       : null;
   }, [business]);
 
-  const driverPoint = useMemo<[number, number] | null>(() => {
+  const driverPoint = useMemo<{
+    latitude: number;
+    longitude: number;
+  } | null>(() => {
     if (typeof live?.lng === 'number' && typeof live?.lat === 'number')
-      return [live.lng, live.lat];
+      return { longitude: live.lng, latitude: live.lat };
     if (typeof profile?.lng === 'number' && typeof profile?.lat === 'number')
-      return [profile.lng!, profile.lat!];
+      return { longitude: profile.lng!, latitude: profile.lat! };
     return null;
   }, [live, profile]);
 
-  const mapCenter = useMemo<[number, number]>(() => {
-    if (driverPoint) return driverPoint;
-    if (businessCenter) return businessCenter;
-    return [-98.35, 39.5];
+  const mapRegion = useMemo(() => {
+    // If both points exist, fit later via effect; otherwise center with deltas.
+    const center = driverPoint ||
+      businessCenter || { latitude: 39.5, longitude: -98.35 };
+    // heuristic deltas based on which center we have
+    const latitudeDelta = driverPoint ? 0.04 : businessCenter ? 0.07 : 30;
+    const longitudeDelta = driverPoint ? 0.04 : businessCenter ? 0.07 : 30;
+    return { ...center, latitudeDelta, longitudeDelta };
   }, [driverPoint, businessCenter]);
 
-  const mapZoom = useMemo(() => {
-    if (driverPoint) return 13;
-    if (businessCenter) return 12;
-    return 3;
+  // Fit to both pins if we have them
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (driverPoint && businessCenter) {
+      mapRef.current.fitToCoordinates([driverPoint, businessCenter], {
+        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+        animated: true,
+      });
+    }
   }, [driverPoint, businessCenter]);
 
   /* ─────────────── data fetchers ─────────────── */
 
-  // Base profile by profileId.
-  // Uses your driver list as a fallback since your list entries map 1:1 to profile_id.
   const hydrateProfile = useCallback(async () => {
     if (!business?.id || !profileId) return;
     setLoading(true);
     try {
-      // If you have a direct endpoint, prefer it:
-      // const p = (await api.get(`/profiles/${profileId}`)).data?.data;
-      // Fallback to getDrivers and pick by id (profile_id):
+      // Prefer a direct endpoint if you have it
       const list = (await getDrivers(business.id)).data ?? [];
       const d = list.find((x: any) => x.id === profileId) || null;
-      // Normalize to Profile shape:
       const p: Profile | null = d
         ? {
             id: d.id,
@@ -246,11 +253,9 @@ export default function DriverOverviewScreen() {
     }
   }, [business?.id, profileId]);
 
-  // Timesheet for today (by profileId)
   const hydrateTimesheetToday = useCallback(async () => {
     if (!profileId) return;
     try {
-      // Your existing route used "id" which was profile_id in practice
       const res = await api.get(
         `/drivers/get-driver-time-entries/${profileId}/${today}`,
       );
@@ -261,12 +266,10 @@ export default function DriverOverviewScreen() {
     }
   }, [profileId]);
 
-  // Current route + stops (by profileId, today)
   const hydrateRouteToday = useCallback(async () => {
     if (!profileId) return;
     try {
       const r = await grabRouteProfileAndDate(profileId, today);
-      // Expecting r?.data to include { id, name/route_name, stops: [] }
       const raw = r?.data ?? null;
       const mapped: RouteSummary | null = raw
         ? {
@@ -286,17 +289,11 @@ export default function DriverOverviewScreen() {
     }
   }, [profileId]);
 
-  // Short history: recent routes & recent stops (by profileId)
   const hydrateHistory = useCallback(async () => {
     if (!profileId) return;
     try {
-      // If you wire these later, the UI already handles null/empty:
-      // Example endpoints (adjust when you implement):
-      // const r = await api.get(`/routes/profile/${profileId}/recent?limit=5`);
-      // const s = await api.get(`/stops/profile/${profileId}/recent?limit=20`);
-      // setRecentRoutes(r?.data?.data ?? []);
-      // setRecentStops(s?.data?.data ?? []);
-      setRecentRoutes([]); // graceful until your API is ready
+      // Hook up when API ready
+      setRecentRoutes([]);
       setRecentStops([]);
     } catch {
       setRecentRoutes([]);
@@ -325,7 +322,8 @@ export default function DriverOverviewScreen() {
     void hydrateTimesheetToday();
     void hydrateRouteToday();
     void hydrateHistory();
-  }, []); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* live merge for last_seen + battery */
   const effectiveProfile: Profile | null = useMemo(() => {
@@ -424,23 +422,17 @@ export default function DriverOverviewScreen() {
 
       {/* Map */}
       <View style={tw`h-64 mx-4 rounded-2xl overflow-hidden mb-3`}>
-        <MapboxGL.MapView
+        <MapView
+          ref={mapRef}
           style={tw`flex-1`}
-          styleURL={MapboxGL.StyleURL.Street}
-          logoEnabled={false}
-          compassEnabled
+          initialRegion={mapRegion}
+          showsUserLocation={false}
+          toolbarEnabled={false}
+          showsCompass
         >
-          <MapboxGL.Camera
-            ref={cameraRef}
-            centerCoordinate={mapCenter}
-            zoomLevel={mapZoom}
-            animationMode="flyTo"
-            animationDuration={600}
-          />
-
           {/* HQ pin + label */}
           {businessCenter && (
-            <MapboxGL.PointAnnotation id="hq" coordinate={businessCenter}>
+            <Marker coordinate={businessCenter}>
               <View style={{ alignItems: 'center' }}>
                 <MapLabel
                   text={business?.name || 'HQ'}
@@ -457,15 +449,12 @@ export default function DriverOverviewScreen() {
                   }}
                 />
               </View>
-            </MapboxGL.PointAnnotation>
+            </Marker>
           )}
 
           {/* Driver pin + label */}
           {driverPoint && (
-            <MapboxGL.PointAnnotation
-              id={`profile-${profileId}`}
-              coordinate={driverPoint}
-            >
+            <Marker coordinate={driverPoint}>
               <View style={{ alignItems: 'center' }}>
                 <MapLabel
                   text={`${initials(name)} • ${lastSeen.replace(
@@ -485,9 +474,9 @@ export default function DriverOverviewScreen() {
                   }}
                 />
               </View>
-            </MapboxGL.PointAnnotation>
+            </Marker>
           )}
-        </MapboxGL.MapView>
+        </MapView>
       </View>
 
       {/* Content */}

@@ -3,68 +3,9 @@
 // Purpose
 //   Manager-facing overview for a single Customer or Vendor, similar to
 //   DriverOverviewScreen but focused on business relationship metrics.
-//   Shows map location, stop stats, financial totals, and recent activity.
-//
-// Navigation (example):
-//   nav.navigate('CustomerVendorOverview', {
-//     entityId: 123,             // number | string
-//     entityType: 'customer',    // 'customer' | 'vendor'
-//     initialEntity: {           // optional hydration for instant paint
-//       id: 123,
-//       name: 'Acme Auto Shop',
-//       phone: '+1 555-123-4567',
-//       email: 'ops@acme.com',
-//       lat: 33.8121,
-//       lng: -117.9190,
-//       address_line1: '1313 Disneyland Dr',
-//       city: 'Anaheim',
-//       state: 'CA',
-//       postal_code: '92802',
-//     }
-//   })
-//
-// API contracts (adjust to your backend):
-//   GET  /v1/entities/:type/:id            -> basic profile (name, contact, geo)
-//   GET  /v1/entities/:type/:id/metrics    -> {
-//          total_stops_assigned: number,
-//          total_stops_completed: number,
-//          total_stops_not_completed: number,
-//          total_amount_collected: number,   // money received FROM this entity
-//          total_amount_paid: number,         // money paid TO this entity (vendors)
-//          last_activity_at: string | null
-//        }
-//   GET  /v1/entities/:type/:id/recent-stops?limit=20 -> StopSummary[]
-//
-// SQL sketch (Supabase/Postgres) for metrics (example; tune to schema):
-//   with base as (
-//     select s.*
-//     from public.stops s
-//     where s.company_id = auth.jwt()->>'company_id'::uuid
-//       and ((:type = 'customer' and s.customer_id = :id)
-//         or (:type = 'vendor' and s.vendor_id = :id))
-//   )
-//   select
-//     count(*)                                 as total_stops_assigned,
-//     count(*) filter (where status = 'completed') as total_stops_completed,
-//     count(*) filter (where status <> 'completed') as total_stops_not_completed,
-//     coalesce(sum(amount_collected_cents),0) / 100.0 as total_amount_collected,
-//     coalesce(sum(amount_paid_cents),0) / 100.0      as total_amount_paid,
-//     max(updated_at) as last_activity_at
-//   from base;
-//
-// Index hints:
-//   create index on public.stops (company_id, customer_id, status);
-//   create index on public.stops (company_id, vendor_id, status);
-//
 // -----------------------------------------------------------------------------
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -80,7 +21,7 @@ import {
   useNavigation,
   useRoute,
 } from '@react-navigation/native';
-import MapboxGL from '@rnmapbox/maps';
+import MapView, { Marker } from 'react-native-maps';
 import {
   ArrowLeft,
   RefreshCcw,
@@ -93,10 +34,6 @@ import { useTheme } from '../../shared/hooks/useTheme';
 import { useSession } from '../../state/useSession';
 // TODO: adjust path to your helper function if different
 import { getEntityById } from '../../shared/lib/EntityHelpers';
-
-MapboxGL.setAccessToken(
-  'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A',
-);
 
 /* ───────────────── types ───────────────── */
 
@@ -114,6 +51,11 @@ type Entity = {
   state?: string | null;
   postal_code?: string | null;
   notes?: string | null;
+
+  // optional contact person fields used in the UI
+  contact_name?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
 };
 
 type Metrics = {
@@ -204,9 +146,12 @@ export default function CustomerVendorOverviewScreen() {
   const [loading, setLoading] = useState(!initialEntity);
   const [refreshing, setRefreshing] = useState(false);
 
-  const cameraRef = useRef<MapboxGL.Camera>(null);
+  const mapRef = useRef<MapView>(null);
 
-  const hqCenter = useMemo<[number, number] | null>(() => {
+  const hqCenter = useMemo<{
+    latitude: number;
+    longitude: number;
+  } | null>(() => {
     const lng =
       (business as any)?.longitude ??
       (business as any)?.lng ??
@@ -216,34 +161,35 @@ export default function CustomerVendorOverviewScreen() {
       (business as any)?.lat ??
       (business as any)?.hq_lat;
     return typeof lng === 'number' && typeof lat === 'number'
-      ? [lng, lat]
+      ? { longitude: lng, latitude: lat }
       : null;
   }, [business]);
 
-  const entityPoint = useMemo<[number, number] | null>(() => {
-    if (typeof entity?.lng === 'number' && typeof entity?.lat === 'number')
-      return [entity.lng!, entity.lat!];
+  const entityPoint = useMemo<{
+    latitude: number;
+    longitude: number;
+  } | null>(() => {
+    if (typeof entity?.lng === 'number' && typeof entity?.lat === 'number') {
+      return { longitude: entity.lng!, latitude: entity.lat! };
+    }
     return null;
   }, [entity]);
 
-  const mapCenter = useMemo<[number, number]>(
-    () => entityPoint || hqCenter || [-98.35, 39.5],
-    [entityPoint, hqCenter],
-  );
-  const mapZoom = useMemo(
-    () => (entityPoint ? 14 : hqCenter ? 11 : 3),
-    [entityPoint, hqCenter],
-  );
+  const initialRegion = useMemo(() => {
+    const center = entityPoint ||
+      hqCenter || { latitude: 39.5, longitude: -98.35 };
+    const delta = entityPoint ? 0.04 : hqCenter ? 0.08 : 30;
+    return { ...center, latitudeDelta: delta, longitudeDelta: delta };
+  }, [entityPoint, hqCenter]);
 
   /* ─────────────── data fetchers ─────────────── */
 
-  // Replaces previous hydrateEntity/metrics/recentStops with a single call
   const hydrateAll = useCallback(async () => {
     if (!entityId) return;
     setLoading(true);
     try {
       const resp = await getEntityById(Number(entityId), entityType);
-      // resp expected shape: { success, data: { entity, metrics, stops }, error, message }
+      // resp expected shape: { success, data: { entity, metrics, stops } }
       const payload: EntityOverview | null = resp?.success ? resp.data : null;
       if (!payload) {
         setMetrics(null);
@@ -255,7 +201,6 @@ export default function CustomerVendorOverviewScreen() {
       const m = payload.metrics as Metrics;
       const stops = Array.isArray(payload.stops) ? payload.stops : [];
 
-      // normalize address for card rendering
       const normalizedStops = stops.map(s => ({
         ...s,
         address:
@@ -268,7 +213,7 @@ export default function CustomerVendorOverviewScreen() {
       setEntity(prev => ({ ...(prev || ({} as any)), ...e }));
       setMetrics(m || null);
       setRecentStops(normalizedStops);
-    } catch (e) {
+    } catch {
       setMetrics(null);
       setRecentStops([]);
     } finally {
@@ -284,9 +229,8 @@ export default function CustomerVendorOverviewScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!initialEntity) void hydrateAll();
-      else void hydrateAll();
-    }, [hydrateAll, initialEntity]),
+      void hydrateAll();
+    }, [hydrateAll]),
   );
 
   /* ─────────────── actions ─────────────── */
@@ -362,23 +306,17 @@ export default function CustomerVendorOverviewScreen() {
 
       {/* Map */}
       <View style={tw`h-64 mx-4 rounded-2xl overflow-hidden mb-3`}>
-        <MapboxGL.MapView
+        <MapView
+          ref={mapRef}
           style={tw`flex-1`}
-          styleURL={MapboxGL.StyleURL.Street}
-          logoEnabled={false}
-          compassEnabled
+          initialRegion={initialRegion}
+          showsUserLocation={false}
+          toolbarEnabled={false}
+          showsCompass
         >
-          <MapboxGL.Camera
-            ref={cameraRef}
-            centerCoordinate={mapCenter}
-            zoomLevel={mapZoom}
-            animationMode="flyTo"
-            animationDuration={600}
-          />
-
           {/* HQ pin */}
           {hqCenter && (
-            <MapboxGL.PointAnnotation id="hq" coordinate={hqCenter}>
+            <Marker coordinate={hqCenter}>
               <View style={{ alignItems: 'center' }}>
                 <MapBadge>{(business as any)?.name || 'HQ'}</MapBadge>
                 <View
@@ -393,15 +331,12 @@ export default function CustomerVendorOverviewScreen() {
                   }}
                 />
               </View>
-            </MapboxGL.PointAnnotation>
+            </Marker>
           )}
 
           {/* Entity pin */}
           {entityPoint && (
-            <MapboxGL.PointAnnotation
-              id={`entity-${entityId}`}
-              coordinate={entityPoint}
-            >
+            <Marker coordinate={entityPoint}>
               <View style={{ alignItems: 'center' }}>
                 <MapBadge>
                   <Text
@@ -414,9 +349,9 @@ export default function CustomerVendorOverviewScreen() {
                   <MapPin width={20} height={20} color="#DC2626" />
                 </View>
               </View>
-            </MapboxGL.PointAnnotation>
+            </Marker>
           )}
-        </MapboxGL.MapView>
+        </MapView>
       </View>
 
       {/* Content */}
@@ -455,7 +390,8 @@ export default function CustomerVendorOverviewScreen() {
                 </View>
               </TouchableOpacity>
             ) : null}
-            {entity?.phone ? (
+            {typeof entity?.lat === 'number' &&
+            typeof entity?.lng === 'number' ? (
               <TouchableOpacity
                 onPress={() => {
                   Linking.openURL(

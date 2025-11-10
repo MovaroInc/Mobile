@@ -31,10 +31,7 @@ import {
   PlusCircle,
 } from 'react-native-feather';
 import Clipboard from '@react-native-clipboard/clipboard';
-import MapboxGL from '@rnmapbox/maps';
-MapboxGL.setAccessToken(
-  'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A',
-);
+import MapView, { Marker } from 'react-native-maps';
 
 import { useTheme } from '../../shared/hooks/useTheme';
 import { useSession } from '../../state/useSession';
@@ -44,7 +41,6 @@ import {
   deleteInvite,
   getInviteByBusinessId,
 } from '../../shared/lib/InviteHelpers';
-import { emitInboxEvent } from '../../shared/lib/inboxHelpers';
 import {
   useLiveLocations,
   lastSeenText,
@@ -61,6 +57,7 @@ type DriverStatus = 'on_route' | 'available' | 'off_duty' | 'pending';
 
 type Driver = {
   id: number;
+  profile_id: number; // needed for live map + navigation
   name?: string;
   phone?: string | null;
   email?: string | null;
@@ -159,11 +156,14 @@ export default function DriversScreen() {
     'pending',
   );
 
-  // Map refs
-  const cameraRef = useRef<MapboxGL.Camera>(null);
+  // Map
+  const mapRef = useRef<MapView>(null);
 
   /* ─────────────── business center (map default) ─────────────── */
-  const businessCenter = useMemo<[number, number] | null>(() => {
+  const businessCenter = useMemo<{
+    latitude: number;
+    longitude: number;
+  } | null>(() => {
     const lng =
       (business as any)?.longitude ??
       (business as any)?.lng ??
@@ -173,15 +173,16 @@ export default function DriversScreen() {
       (business as any)?.lat ??
       (business as any)?.hq_lat;
     return typeof lng === 'number' && typeof lat === 'number'
-      ? [lng, lat]
+      ? { longitude: lng, latitude: lat }
       : null;
   }, [business]);
 
-  const mapCenter = useMemo<[number, number]>(() => {
-    if (businessCenter) return businessCenter;
-    return [-98.35, 39.5]; // fallback (USA)
+  const initialRegion = useMemo(() => {
+    const center = businessCenter || { latitude: 39.5, longitude: -98.35 };
+    const latitudeDelta = businessCenter ? 0.07 : 30;
+    const longitudeDelta = businessCenter ? 0.07 : 30;
+    return { ...center, latitudeDelta, longitudeDelta };
   }, [businessCenter]);
-  const mapZoom = useMemo(() => (businessCenter ? 12 : 3), [businessCenter]);
 
   /* ─────────────── fetchers ─────────────── */
 
@@ -204,9 +205,7 @@ export default function DriversScreen() {
     try {
       const all = (await getInviteByBusinessId(business.id)) ?? [];
       setInvites(all.data);
-      // await emitInboxEvent(business.id);
     } catch {
-      console.log('error');
       setInvites([]);
     } finally {
       setLoadingInvites(false);
@@ -309,7 +308,6 @@ export default function DriversScreen() {
         status: 'closed',
       });
       if (res?.success) {
-        console.log('res', res);
         setActionTimeSheet(res.data);
       } else {
         console.log('error', res?.message);
@@ -329,7 +327,6 @@ export default function DriversScreen() {
         status: 'open',
       });
       if (res?.success) {
-        console.log('res', res);
         setActionTimeSheet(res.data);
       } else {
         console.log('error', res?.message);
@@ -340,88 +337,6 @@ export default function DriversScreen() {
       setActionDriver(null);
     }
   };
-  // const checkTimesheet = async () => {
-
-  //   setLoading(true);
-  //   try {
-  //     const resToday = await grabDriverTimeEntries(profile.id, today);
-
-  //   } catch {
-  //     console.log('error');
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
-
-  // const handleClockOut = async () => {
-  //   try {
-  //     const current = timeEntry[0];
-  //     if (!current?.id || !current?.clock_in) {
-  //       Alert.alert(
-  //         'No open timesheet',
-  //         'Could not find an active time entry to close.',
-  //       );
-  //       return;
-  //     }
-  //     const res = await updateTimeEntry(current.id, {
-  //       clock_out: new Date().toISOString(),
-  //       status: 'closed',
-  //     });
-  //     if (!res?.success) {
-  //       Alert.alert('Clock out failed', res?.message || 'Please try again.');
-  //       return;
-  //     }
-  //     checkTimesheet();
-  //     Alert.alert('Clocked out', 'Your time has been recorded.');
-  //   } catch (e: any) {
-  //     Alert.alert('Clock out failed', e?.message || 'Please try again.');
-  //   }
-  // };
-
-  // const handleClockIn = async () => {
-  //   try {
-  //     setLoading(true);
-
-  //     // create today entry
-  //     const res = await createTimeEntry({
-  //       business_id: business.id,
-  //       profile_id: profile.id,
-  //       selected_date: today,
-  //       clock_in: new Date().toISOString(),
-  //       clock_out: null,
-  //       status: 'open',
-  //       duration_minutes: null,
-  //       source: 'app',
-  //       notes: 'Clocked in from driver app',
-  //     });
-
-  //     const resRoute = await updateRouter(route?.id ?? 0, {
-  //       status: 'in_progress',
-  //     });
-
-  //     setStartWithin1Mile(false);
-
-  //     if (resRoute?.success) {
-  //       setRoute(resRoute.data);
-  //     }
-
-  //     if (res?.success) {
-  //       setTimeEntry(res.data || []);
-  //       setClockedIn(true); // <- live feed starts via effect
-  //       await createNotification(
-  //         'New Clock In',
-  //         `${profile?.first_name} ${profile?.last_name?.[0]}. has clocked in`,
-  //       );
-  //       run(); // fetch route/stops
-  //     } else {
-  //       Alert.alert('Clock in failed', res?.message || 'Try again.');
-  //     }
-  //   } catch (e: any) {
-  //     Alert.alert('Clock in failed', e?.message || 'Try again.');
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
 
   /* ─────────────── derived (filtering) ─────────────── */
 
@@ -455,7 +370,7 @@ export default function DriversScreen() {
 
   const onInvite = () => nav.navigate('DriverInvite');
   const onOpenProfile = (driver: Driver) =>
-    nav.navigate('DriverProfile', { driverId: driver.id });
+    nav.navigate('DriverOverview', { profileId: driver.profile_id });
   const onCall = (driver: Driver) => {
     if (!driver.phone) return;
     Linking.openURL(`tel:${driver.phone}`);
@@ -492,34 +407,6 @@ export default function DriversScreen() {
     } catch (e: any) {
       Alert.alert('Resend failed', e?.message || 'Unable to resend invite');
     }
-  };
-  const handleRevoke = async (inv: Invite) => {
-    Alert.alert(
-      'Revoke invite?',
-      'This will prevent signup with this link/code.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Revoke',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.post('/invites/revoke', { inviteId: inv.id });
-              await fetchInvites();
-              Alert.alert(
-                'Invite revoked',
-                'The invite can no longer be used.',
-              );
-            } catch (e: any) {
-              Alert.alert(
-                'Revoke failed',
-                e?.message || 'Unable to revoke invite',
-              );
-            }
-          },
-        },
-      ],
-    );
   };
   const handleDelete = async (inv: Invite) => {
     Alert.alert(
@@ -626,6 +513,24 @@ export default function DriversScreen() {
       </View>
     );
   }
+
+  // Fit the map to HQ + visible driver markers
+  useEffect(() => {
+    if (!mapRef.current || viewMode !== 'map') return;
+    const coords = [
+      ...(businessCenter ? [businessCenter] : []),
+      ...filteredDrivers
+        .filter(d => typeof d.lat === 'number' && typeof d.lng === 'number')
+        .map(d => ({ latitude: d.lat as number, longitude: d.lng as number })),
+    ];
+    if (coords.length >= 2) {
+      mapRef.current.fitToCoordinates(coords, {
+        edgePadding: { top: 60, right: 60, bottom: 120, left: 60 },
+        animated: true,
+      });
+    }
+  }, [filteredDrivers, businessCenter, viewMode]);
+
   /* ─────────────── render ─────────────── */
 
   return (
@@ -972,23 +877,17 @@ export default function DriversScreen() {
               />
             </View>
           ) : (
-            <MapboxGL.MapView
+            <MapView
+              ref={mapRef}
               style={tw`flex-1`}
-              styleURL={MapboxGL.StyleURL.Street}
-              logoEnabled={false}
-              compassEnabled
+              initialRegion={initialRegion}
+              showsUserLocation={false}
+              toolbarEnabled={false}
+              showsCompass
             >
-              <MapboxGL.Camera
-                ref={cameraRef}
-                centerCoordinate={mapCenter}
-                zoomLevel={mapZoom}
-                animationMode="flyTo"
-                animationDuration={600}
-              />
-
               {/* HQ pin with white label */}
               {businessCenter && (
-                <MapboxGL.PointAnnotation id="hq" coordinate={businessCenter}>
+                <Marker coordinate={businessCenter}>
                   <View
                     style={[
                       tw`items-center justify-center`,
@@ -1023,7 +922,7 @@ export default function DriversScreen() {
                       {'HQ'}
                     </Text>
                   </View>
-                </MapboxGL.PointAnnotation>
+                </Marker>
               )}
 
               {/* Driver pins (merged with driver_location_live) */}
@@ -1032,11 +931,13 @@ export default function DriversScreen() {
                   d => typeof d.lat === 'number' && typeof d.lng === 'number',
                 )
                 .map(d => (
-                  <MapboxGL.PointAnnotation
+                  <Marker
                     key={String(d.id)}
-                    id={String(d.id)}
-                    coordinate={[d.lng as number, d.lat as number]}
-                    onSelected={() => onOpenProfile(d)}
+                    coordinate={{
+                      latitude: d.lat as number,
+                      longitude: d.lng as number,
+                    }}
+                    onPress={() => onOpenProfile(d)}
                   >
                     <View
                       style={[
@@ -1077,9 +978,9 @@ export default function DriversScreen() {
                         {driverName(d)}
                       </Text>
                     </View>
-                  </MapboxGL.PointAnnotation>
+                  </Marker>
                 ))}
-            </MapboxGL.MapView>
+            </MapView>
           )
         ) : // INVITES TAB
         loadingInvites ? (
@@ -1196,7 +1097,7 @@ export default function DriversScreen() {
               label="View Profile"
               onPress={() => {
                 nav.navigate('DriverOverview', {
-                  profileId: actionDriver.profile_id,
+                  profileId: actionDriver!.profile_id,
                 });
                 setActionDriver(null);
               }}
@@ -1205,7 +1106,7 @@ export default function DriversScreen() {
             <SheetButton
               label="Call Driver"
               onPress={() => {
-                onCall(actionDriver);
+                onCall(actionDriver!);
                 setActionDriver(null);
               }}
               colors={colors}
@@ -1238,7 +1139,6 @@ export default function DriversScreen() {
               <SheetButton
                 label="Force Clock In"
                 onPress={() => {
-                  console.log('clock in actionDriver', actionDriver);
                   Alert.alert(
                     'Force Clock In',
                     'Are you sure you want to force clock in?',
@@ -1248,7 +1148,7 @@ export default function DriversScreen() {
                         text: 'Clock In',
                         style: 'destructive',
                         onPress: () => {
-                          handleForceClockIn(actionDriver);
+                          handleForceClockIn(actionDriver!);
                         },
                       },
                     ],
@@ -1262,10 +1162,9 @@ export default function DriversScreen() {
               <SheetButton
                 label="Force Undo Clock Out"
                 onPress={() => {
-                  console.log('clock in actionDriver', actionDriver);
                   Alert.alert(
                     'Force Undo Clock Out',
-                    'Are you sure you want to force clock in?',
+                    'Are you sure you want to undo the clock out?',
                     [
                       { text: 'Cancel', style: 'cancel' },
                       {
