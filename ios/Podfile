@@ -42,6 +42,9 @@ target 'Movaro' do
     :path => config[:reactNativePath],
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
+  
+  # 🟢 ADDED: Pod for react-native-maps using the Google Maps SDK
+  pod 'react-native-maps', :path => '../node_modules/react-native-maps'
 
   # ⬇️ REMOVE all the manual Permission-* pod declarations
   # They are now handled automatically by setup_permissions above

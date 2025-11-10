@@ -8,15 +8,6 @@ PODS:
   - hermes-engine (0.81.4):
     - hermes-engine/Pre-built (= 0.81.4)
   - hermes-engine/Pre-built (0.81.4)
-  - MapboxCommon (23.11.4)
-  - MapboxCoreMaps (10.19.2):
-    - MapboxCommon (~> 23.11)
-  - MapboxMaps (10.19.4):
-    - MapboxCommon (= 23.11.4)
-    - MapboxCoreMaps (= 10.19.2)
-    - MapboxMobileEvents (= 2.0.0)
-    - Turf (= 2.8.0)
-  - MapboxMobileEvents (2.0.0)
   - RCT-Folly (2024.11.18.00):
     - boost
     - DoubleConversion
@@ -1878,6 +1869,65 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - react-native-maps (1.26.18):
+    - react-native-maps/Maps (= 1.26.18)
+  - react-native-maps/Generated (1.26.18):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
+  - react-native-maps/Maps (1.26.18):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - react-native-maps/Generated
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - react-native-mmkv (3.3.3):
     - boost
     - DoubleConversion
@@ -2643,38 +2693,6 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - rnmapbox-maps (10.1.45):
-    - MapboxMaps (~> 10.19.0)
-    - React
-    - React-Core
-    - rnmapbox-maps/DynamicLibrary (= 10.1.45)
-    - Turf
-  - rnmapbox-maps/DynamicLibrary (10.1.45):
-    - boost
-    - DoubleConversion
-    - fast_float
-    - fmt
-    - hermes-engine
-    - MapboxMaps (~> 10.19.0)
-    - RCT-Folly
-    - RCT-Folly/Fabric
-    - RCTRequired
-    - RCTTypeSafety
-    - React
-    - React-Core
-    - React-featureflags
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - SocketRocket
-    - Turf
-    - Yoga
   - RNPermissions (5.4.2):
     - boost
     - DoubleConversion
@@ -2954,7 +2972,6 @@ PODS:
     - StripeUICore (= 24.19.0)
   - StripeUICore (24.19.0):
     - StripeCore (= 24.19.0)
-  - Turf (2.8.0)
   - WCPhotoManipulator (2.6.0)
   - Yoga (0.0.0)
 
@@ -3006,6 +3023,7 @@ DEPENDENCIES:
   - react-native-get-random-values (from `../node_modules/react-native-get-random-values`)
   - react-native-image-picker (from `../node_modules/react-native-image-picker`)
   - react-native-keyboard-controller (from `../node_modules/react-native-keyboard-controller`)
+  - react-native-maps (from `../node_modules/react-native-maps`)
   - react-native-mmkv (from `../node_modules/react-native-mmkv`)
   - "react-native-netinfo (from `../node_modules/@react-native-community/netinfo`)"
   - react-native-photo-manipulator (from `../node_modules/react-native-photo-manipulator`)
@@ -3045,7 +3063,6 @@ DEPENDENCIES:
   - "RNCPushNotificationIOS (from `../node_modules/@react-native-community/push-notification-ios`)"
   - "RNDateTimePicker (from `../node_modules/@react-native-community/datetimepicker`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
-  - "rnmapbox-maps (from `../node_modules/@rnmapbox/maps`)"
   - RNPermissions (from `../node_modules/react-native-permissions`)
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNSVG (from `../node_modules/react-native-svg`)
@@ -3059,10 +3076,6 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
-    - MapboxCommon
-    - MapboxCoreMaps
-    - MapboxMaps
-    - MapboxMobileEvents
     - scandit-datacapture-frameworks-barcode
     - scandit-datacapture-frameworks-core
     - scandit-datacapture-frameworks-id
@@ -3081,7 +3094,6 @@ SPEC REPOS:
     - StripePaymentSheet
     - StripePaymentsUI
     - StripeUICore
-    - Turf
     - WCPhotoManipulator
 
 EXTERNAL SOURCES:
@@ -3178,6 +3190,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-image-picker"
   react-native-keyboard-controller:
     :path: "../node_modules/react-native-keyboard-controller"
+  react-native-maps:
+    :path: "../node_modules/react-native-maps"
   react-native-mmkv:
     :path: "../node_modules/react-native-mmkv"
   react-native-netinfo:
@@ -3256,8 +3270,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-community/datetimepicker"
   RNGestureHandler:
     :path: "../node_modules/react-native-gesture-handler"
-  rnmapbox-maps:
-    :path: "../node_modules/@rnmapbox/maps"
   RNPermissions:
     :path: "../node_modules/react-native-permissions"
   RNScreens:
@@ -3285,10 +3297,6 @@ SPEC CHECKSUMS:
   fmt: a40bb5bd0294ea969aaaba240a927bd33d878cdd
   glog: 5683914934d5b6e4240e497e0f4a3b42d1854183
   hermes-engine: 35c763d57c9832d0eef764316ca1c4d043581394
-  MapboxCommon: cc47fafe3fe5408ca49240aa80fa64f27f275711
-  MapboxCoreMaps: 35685edba03e44468aed57c3dfd7f8795edafda8
-  MapboxMaps: f87023cf0d72b180b40ea0b6fb4b2d7db6b73b71
-  MapboxMobileEvents: d044b9edbe0ec7df60f6c2c9634fe9a7f449266b
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: c0ed3249a97243002615517dff789bf4666cf585
   RCTRequired: 58719f5124f9267b5f9649c08bf23d9aea845b23
@@ -3328,6 +3336,7 @@ SPEC CHECKSUMS:
   react-native-get-random-values: d16467cf726c618e9c7a8c3c39c31faa2244bbba
   react-native-image-picker: 0314366753615115fa55c3cc937ac44cb7e75702
   react-native-keyboard-controller: 7e305e26078360602b5d523ff84250b5a054a6ff
+  react-native-maps: 92f417ffa2c6598b783f133df25e60ce62aede0f
   react-native-mmkv: ac7507625cd74bac0eb5333604a7cd7b08fe9e3e
   react-native-netinfo: cec9c4e86083cb5b6aba0e0711f563e2fbbff187
   react-native-photo-manipulator: 294cbece46b60c3529965145a67a1336615c1cef
@@ -3367,7 +3376,6 @@ SPEC CHECKSUMS:
   RNCPushNotificationIOS: 6c4ca3388c7434e4a662b92e4dfeeee858e6f440
   RNDateTimePicker: 113004837aad399a525cd391ac70b7951219ff2f
   RNGestureHandler: 3a73f098d74712952870e948b3d9cf7b6cae9961
-  rnmapbox-maps: 6347eb0fad185f6cfdba3ee5e116f5eb9b796a3e
   RNPermissions: f841cbbcecc29bbc69c0fe01e8c0344b98cee801
   RNScreens: 0bbf16c074ae6bb1058a7bf2d1ae017f4306797c
   RNSVG: 6c39befcfad06eec55b40c19a030b2d9eca63334
@@ -3394,10 +3402,9 @@ SPEC CHECKSUMS:
   StripePaymentSheet: b126816213ae4f56ff4525ad25f94bb985a43e27
   StripePaymentsUI: 05d4be35b34f821d5ddc8617dee04219f3646253
   StripeUICore: d07bd63a4b53dee8cab4d6f81ce5a7ab3e28511e
-  Turf: aa2ede4298009639d10db36aba1a7ebaad072a5e
   WCPhotoManipulator: 804988e16a6fe941cddff942b2acf887110de5d6
   Yoga: a3ed390a19db0459bd6839823a6ac6d9c6db198d
 
-PODFILE CHECKSUM: 2ea1c073f7c1e2cbbc89dee2a3cf47fac1ce9c3c
+PODFILE CHECKSUM: ec38a38d81e908cb6149bb6cbd61b17d8e7e2169
 
 COCOAPODS: 1.16.2
