@@ -32,6 +32,7 @@ import {
 import StepRow from '../../shared/components/info/StepRow';
 import { toE164US } from '../../shared/utils/phone';
 import { storeNotificationToken } from '../../shared/lib/notifications';
+import { createDefaultSubscription } from '../../shared/lib/SubscriptionHelpers';
 
 const CreatingProfileScreen = () => {
   const { colors } = useTheme();
@@ -392,22 +393,45 @@ const CreatingProfileScreen = () => {
 
   const FinishingUp = async (biz: any, usr: any, empl: any, cust: any) => {
     setProcessing({ ...processing, finishingUp: true });
-    const { data } = await updateProfileAndBusiness(usr, biz, empl, cust);
-    if (!data.success) {
-      console.log('data', JSON.stringify(data, null, 2));
+    const response = await updateProfileAndBusiness(usr, biz, empl, cust);
+    console.log('signup data', JSON.stringify(response.data, null, 2));
+    if (!response.success) {
+      console.log(
+        'data after no success',
+        JSON.stringify(response.data, null, 2),
+      );
       setErrors(es => ({
         ...es,
-        finishingUp: data?.message || 'Failed to finish up',
+        finishingUp: response.data?.message || 'Failed to finish up',
       }));
       setProcessing(ps => ({ ...ps, finishingUp: false }));
       setStepDone(sd => ({ ...sd, finishingUp: true }));
       return;
     }
-    console.log('data', JSON.stringify(data, null, 2));
-    setCustomer(data.data);
+    const response2 = await createDefaultSubscription(
+      biz.id,
+      usr.email,
+      biz.name,
+    );
+    console.log('response2 front', JSON.stringify(response2, null, 2));
+    if (!response2.success) {
+      console.log('response2', JSON.stringify(response2.data, null, 2));
+      setErrors(es => ({
+        ...es,
+        finishingUp: response2?.message || 'Failed to create free subscription',
+      }));
+      setProcessing(ps => ({ ...ps, finishingUp: false }));
+      setStepDone(sd => ({ ...sd, finishingUp: true }));
+      return;
+    } else {
+      console.log(
+        'Free subscription created:',
+        JSON.stringify(response.data, null, 2),
+      );
+    }
     setProcessing(ps => ({ ...ps, finishingUp: false }));
     setStepDone(sd => ({ ...sd, finishingUp: true }));
-    return data.data;
+    return response.data;
   };
 
   const nextScreen = async () => {

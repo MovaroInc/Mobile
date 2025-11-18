@@ -101,7 +101,7 @@ export const plans = {
         {
           "id": "enterprise-1",
           "name": "Tier 1",
-          "drivers": { "min": 30, "max": 34 },
+          "drivers": { "min": 29, "max": 34 },
           "stopsPerMonth": 13200,
           "monthly": 1249.99,
           "avgStopsPerDriverPerMonth": 394,
@@ -134,7 +134,7 @@ export const plans = {
         {
           "id": "enterprise-4",
           "name": "Tier 4",
-          "drivers": { "min": 46, "max": 50 },
+          "drivers": { "min": 46, "max": 52 },
           "stopsPerMonth": 20000,
           "monthly": 2699.99,
           "avgStopsPerDriverPerMonth": 438,

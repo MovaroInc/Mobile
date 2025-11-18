@@ -105,38 +105,22 @@ export default function ProfileScreen() {
   };
 
   const handleSubmitSubscriptionRequest = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const payload = {
-        to: 'contact@movaroinc.com',
-        name: displayName,
-        businessName: business?.name,
-        businessId: business?.id,
-        stripeCustomerId: subscription?.stripe_customer_id,
-        stripeSubscriptionId: subscription?.stripe_subscription_id,
-        status: subscription?.status,
-        currentTier: subscription?.tier,
-        requestedTier: 'custom',
-        username: profile?.username,
-        contactEmail: profile?.email,
-        contactPhone: profile?.phone || 'no phone',
-        notes: 'no notes',
-        userId: profile?.id,
-      };
-      const r = await api.post<{
-        success: boolean;
-        error?: any;
-        message?: string;
-      }>('/notifications/send-update-subscription', payload);
-
-      if (!r?.success) throw new Error(r?.message || 'Request failed');
-      Alert.alert('Request sent', 'We’ll contact you shortly.');
-    } catch (e: any) {
-      Alert.alert('Could not send request', e?.message || 'Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+    Alert.alert(
+      'Redirecting to subscription management',
+      'You will be redirected to the subscription management page in your browser.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Continue',
+          onPress: () => {
+            Linking.openURL('https://movaro-web-g4bx.onrender.com');
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -198,30 +182,12 @@ export default function ProfileScreen() {
             <SectionTitle colors={colors} label="Subscription" Icon={Repeat} />
 
             <Row
-              label="Upgrade Subscription"
+              label="Manage Subscription"
               Icon={CreditCard}
               colors={colors}
               onPress={handleSubmitSubscriptionRequest}
               inset
               trailingText={submitting ? 'Sending…' : undefined}
-            />
-            <Divider colors={colors} inset />
-
-            <Row
-              label="Manage Subscription"
-              Icon={Menu}
-              colors={colors}
-              onPress={() => nav.navigate('ManageSubscription')}
-              inset
-            />
-            <Divider colors={colors} inset />
-
-            <Row
-              label="Billing History"
-              Icon={DollarSign}
-              colors={colors}
-              onPress={() => nav.navigate('BillingHistory')}
-              inset
             />
           </Card>
         )}

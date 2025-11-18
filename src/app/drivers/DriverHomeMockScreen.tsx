@@ -62,6 +62,39 @@ import StartGateMapCard from '../../shared/components/Map/StartGateMapCard';
 const MAPBOX_TOKEN =
   'pk.eyJ1IjoibW92YWwiLCJhIjoiY21jZTJ1cnJrMDc3dTJrcHBwZzMyd2dhdSJ9.DFSiGfHa19L8vMK7muIr8A';
 
+/* ───────────────── Platform-aware permission helpers ───────────────── */
+
+type Level = {
+  authorized: boolean;
+  scope?: 'denied' | 'when_in_use' | 'always' | string;
+};
+
+const isPermissionSatisfied = (lvl: Level) => {
+  if (!lvl?.authorized) return false;
+  if (Platform.OS === 'ios') {
+    // iOS requires “Always-like”
+    return isAlwaysLike(lvl);
+  }
+  // Android: foreground is enough
+  return lvl.scope === 'when_in_use' || lvl.scope === 'always';
+};
+
+const ensureRequiredPermission = async (): Promise<Level> => {
+  let lvl = await getLocationLevel();
+
+  // If not authorized, ask for foreground once
+  if (!lvl.authorized) {
+    lvl = await requestForegroundOnce();
+  }
+
+  // iOS only: attempt upgrade to Always
+  if (Platform.OS === 'ios' && !isAlwaysLike(lvl)) {
+    lvl = await tryUpgradeToAlways();
+  }
+
+  return lvl;
+};
+
 /* ───────────────── types ───────────────── */
 
 type StopStatus = 'scheduled' | 'en_route' | 'arrived' | 'completed';
@@ -101,7 +134,7 @@ type RouteRecord = {
   service_date: string; // YYYY-MM-DD
   planned_start_at?: string | null;
   planned_start_at_local_hm?: string | null;
-  status: 'planned' | 'in_progress' | 'completed';
+  status: 'planned' | 'in_progress' | 'completed' | 'dispatched';
   progress?: number | null;
   distance_remaining_km?: number | null;
   time_remaining_min?: number | null;
@@ -110,6 +143,9 @@ type RouteRecord = {
   driver_display?: 'full' | 'single' | null;
   auto_trigger_stops?: boolean | null;
   allowed_breaks?: number | null;
+  start_latitude?: number | null;
+  start_longitude?: number | null;
+  start_base?: boolean | null;
   stops?: Stop[] | null;
 };
 
@@ -133,7 +169,6 @@ function todayLocalYYYYMMDD(d = new Date()): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
-
 const today = todayLocalYYYYMMDD();
 
 function greeting() {
@@ -266,6 +301,7 @@ export default function DriverTodayScreen() {
       const loadData = async () => {
         await recheckLocationGate(); // check permission first
         const timesheetData = await checkTimesheet();
+        console.log('timesheetData', timesheetData);
         if (timesheetData && timesheetData.id) {
           await run();
         } else {
@@ -288,24 +324,17 @@ export default function DriverTodayScreen() {
       lvl = await requestForegroundOnce();
     }
 
-    // 3) decide which modal to show
-    if (!lvl.authorized) {
+    // 3) if still not sufficient, show platform-appropriate modal
+    if (!isPermissionSatisfied(lvl)) {
       if (!dismissed) {
-        setModalMode('need_permission');
+        setModalMode(Platform.OS === 'ios' ? 'need_always' : 'need_permission');
         setShowLocModal(true);
       }
       return;
     }
 
-    // authorized but not “Always-like”
-    if (!isAlwaysLike(lvl)) {
-      if (!dismissed) {
-        setModalMode('need_always');
-        setShowLocModal(true);
-      }
-    } else {
-      setShowLocModal(false);
-    }
+    // All good
+    setShowLocModal(false);
   }, []);
 
   /* ─────────────── data helpers ─────────────── */
@@ -350,33 +379,58 @@ export default function DriverTodayScreen() {
     }
   };
 
-  const validateWtihin1Mile = async () => {
-    if (!profile?.id) return;
-    const res = await grabRouteProfileAndDate(profile.id ?? 0, today);
-    const r: RouteRecord | null = res?.success ? res.data ?? null : null;
-    setRoute(r);
-    const routeStatus = r?.status;
-    const fix = await getOneFix();
-    if (fix.ok) {
-      const within = isWithinOneMile(
-        { latitude: fix.coords.latitude, longitude: fix.coords.longitude },
-        {
-          latitude: r?.start_latitude ?? 0,
-          longitude: r?.start_longitude ?? 0,
-        },
-      );
+  const validateWtihin1Mile = useCallback(async () => {
+    console.log('validateWtihin1Mile');
+    try {
+      console.log('profile', profile?.id);
+      if (!profile?.id) return;
+
+      // Get today's route
+      console.log('today', today);
+      const res = await grabRouteProfileAndDate(profile.id, today);
+      console.log('res', res);
+      const r: RouteRecord | null = res?.success ? res.data ?? null : null;
+      setRoute(r);
+
+      // Default: don't show the gate
+      let showGate = false;
+
+      // Only gate when:
+      // - we have a route,
+      // - it starts at base (start_base = true),
+      // - it's dispatched (hasn't started yet),
+      // - we have valid start coords,
+      // - and the driver is not clocked in.
       if (
-        within.within &&
-        routeStatus === 'dispatched' &&
-        r?.start_base &&
+        r &&
+        r.start_base &&
+        r.status === 'dispatched' &&
+        typeof r.start_latitude === 'number' &&
+        typeof r.start_longitude === 'number' &&
         !clockedIn
       ) {
-        setStartWithin1Mile(false);
-      } else {
-        setStartWithin1Mile(true);
+        const fix = await getOneFix();
+        console.log('fix', fix);
+        if (fix.ok) {
+          const { within } = isWithinOneMile(
+            { latitude: fix.coords.latitude, longitude: fix.coords.longitude },
+            { latitude: r.start_latitude!, longitude: r.start_longitude! },
+          );
+          // Show the gate card if NOT within 1 mile
+          console.log('within', within);
+          showGate = !within;
+        } else {
+          // If we can't get a fix, be permissive: don't block
+          showGate = false;
+        }
       }
+
+      setStartWithin1Mile(showGate);
+    } catch {
+      // On any error, don't block the user
+      setStartWithin1Mile(false);
     }
-  };
+  }, [profile?.id, clockedIn]);
 
   const run = async () => {
     try {
@@ -603,11 +657,18 @@ export default function DriverTodayScreen() {
     try {
       setLoading(true);
 
-      // enforce location policy before clock in
+      // enforce platform-aware location policy before clock in
       const okToClockIn = await (async () => {
-        const lvl = await tryUpgradeToAlways();
-        if (isAlwaysLike(lvl)) return true;
-        setModalMode(lvl.authorized ? 'need_always' : 'need_permission');
+        const lvl = await ensureRequiredPermission();
+        if (isPermissionSatisfied(lvl)) return true;
+
+        setModalMode(
+          Platform.OS === 'ios'
+            ? lvl.authorized
+              ? 'need_always'
+              : 'need_permission'
+            : 'need_permission',
+        );
         setShowLocModal(true);
         return false;
       })();
@@ -683,19 +744,14 @@ export default function DriverTodayScreen() {
   };
 
   const createNotification = async (title: string, body: string) => {
-    // NOTE: The original code used 'invite.business_id', but the context was 'business.id'.
-    // I'm using 'invite.business_id' as provided in your prompt, but verify this is correct.
     const admin = await getBusinessAdmin(business?.id ?? 0);
 
     if (admin.data.length > 0) {
-      // 1. FILTER: First, filter the admin data to only include those with a valid apns_token.
       const adminsWithToken = admin.data.filter((a: any) => {
         const token = a?.profile?.device?.[0]?.apns_token;
-        // A concise check for a non-empty string: it's not null/undefined AND its length > 0
         return typeof token === 'string' && token.length > 0;
       });
 
-      // 2. MAP: Then, create an array of Promises only for the filtered admins.
       const sendPromises = adminsWithToken.map(async (a: any) => {
         const token = a.profile.device[0].apns_token;
 
@@ -709,14 +765,10 @@ export default function DriverTodayScreen() {
         };
 
         const res = await sendNotification(payload);
-        return res?.success; // Return the success status of the send attempt
+        return res?.success;
       });
 
-      // 3. AWAIT: Wait for all successful promises to complete.
-      // If 'adminsWithToken' is empty, 'sendPromises' is empty, and Promise.all resolves immediately.
       const results = await Promise.all(sendPromises);
-
-      // Return true if at least one notification attempt was successful.
       return results.some(success => success);
     }
     return true;
@@ -944,23 +996,6 @@ export default function DriverTodayScreen() {
           <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>
             {clockedIn ? 'Your day at a glance' : 'Start your day'}
           </Text>
-          {/* <TouchableOpacity
-            onPress={() => {}}
-            style={[
-              tw`p-2 rounded-2 border`,
-              {
-                borderColor: colors.border,
-                backgroundColor: colors.borderSecondary,
-              },
-            ]}
-          >
-            <MapIcon
-              height={16}
-              width={16}
-              style={tw`mr-1`}
-              color={colors.muted}
-            />
-          </TouchableOpacity> */}
         </View>
       </View>
 
@@ -1329,7 +1364,9 @@ export default function DriverTodayScreen() {
             <Text style={[tw`text-lg font-bold`, { color: colors.text }]}>
               {modalMode === 'need_permission'
                 ? 'Enable Location Access'
-                : 'Switch to “Always” Location'}
+                : Platform.OS === 'ios'
+                ? 'Switch to “Always” Location'
+                : 'Enable Location Access'}
             </Text>
 
             <Text style={[tw`text-xs mt-2`, { color: colors.muted }]}>
@@ -1354,7 +1391,9 @@ export default function DriverTodayScreen() {
               <Text style={tw`text-white font-semibold text-sm`}>
                 {modalMode === 'need_permission'
                   ? 'Open Settings to Enable Location'
-                  : 'Open Settings to Allow “Always”'}
+                  : Platform.OS === 'ios'
+                  ? 'Open Settings to Allow “Always”'
+                  : 'Open Settings to Enable Location'}
               </Text>
             </TouchableOpacity>
 

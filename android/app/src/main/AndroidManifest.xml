@@ -43,7 +43,7 @@
     <!-- React Native Maps / Google Maps API key -->
     <meta-data
       android:name="com.google.android.geo.API_KEY"
-      android:value="c077600dd0msh70cad04baf5f0e2p187ab4jsn23535e260f32" />
+      android:value="AIzaSyCNm5tqiE-6mlPxw2rrUJ6S7L3wHGzmcJI" />
 
     <activity
       android:name=".MainActivity"

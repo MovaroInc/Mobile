@@ -7,6 +7,7 @@ export const storeNotificationToken = async (payload: any) => {
     error: any | null;
     message: string | null;
   }>(`/notifications/store-token`, payload);
+  console.log('res', JSON.stringify(res.data, null, 2));
   return res.data;
 };
 

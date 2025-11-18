@@ -8,11 +8,13 @@ export function validateEmailFormat(email: string): boolean {
 }
 
 export async function checkEmailAvailable(email: string): Promise<boolean> {
+  console.log('checkEmailAvailable', email);
   const { data } = await api.get<{
     ok: boolean;
     available: boolean;
     error?: string;
-  }>('/users/validate-email', { params: { email } });
+  }>(`/users/validate-email/${email}`);
+  console.log('data', JSON.stringify(data, null, 2));
   if (!data.ok) return false;
   return data.available;
 }

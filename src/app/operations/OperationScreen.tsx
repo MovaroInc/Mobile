@@ -14,6 +14,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import tw from 'twrnc';
 import { useTheme } from '../../shared/hooks/useTheme';
@@ -216,7 +217,9 @@ export default function OperationScreen() {
       <View style={tw`px-4 mb-3 flex-row items-center mt-2`}>
         <View
           style={[
-            tw`flex-row items-center flex-1 px-3 py-2 rounded-xl mr-2`,
+            tw`flex-row items-center flex-1 px-3 ${
+              Platform.OS === 'ios' ? 'py-2' : 'py-.5'
+            } rounded-xl mr-2`,
             { backgroundColor: colors.border },
           ]}
         >
@@ -226,12 +229,15 @@ export default function OperationScreen() {
             onChangeText={setQuery}
             placeholder={`Search ${tab.toLowerCase()}...`}
             placeholderTextColor={'#9CA3AF'}
-            style={[tw`ml-2 flex-1`, { color: colors.text }]}
+            style={[
+              tw`ml-2 flex-1 ${Platform.OS === 'ios' ? 'py-2' : 'py-.5'}`,
+              { color: colors.text },
+            ]}
           />
         </View>
         <TouchableOpacity
           style={[
-            tw`px-3 py-2 rounded-xl`,
+            tw`px-3 ${Platform.OS === 'ios' ? 'py-2' : 'py-.5'} rounded-xl`,
             { backgroundColor: 'rgba(255,255,255,0.06)' },
           ]}
         >

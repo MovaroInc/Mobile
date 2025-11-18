@@ -11,7 +11,6 @@ import { useSession } from '../state/useSession';
 import AuthNavigation from './auth/AuthNavigation';
 import AdminNavigation from './admin/AdminNavigation';
 import UserTab from './users/tabs/UserTabNavigation';
-import DriverNavigation from './driver/DriverNavigation';
 import SubscriptionNavigation from './subscription/SubscriptionNavigation';
 import { linking } from '../shared/lib/linking';
 import DriverTabs from './driver/tabs/DriverTabs';
@@ -21,21 +20,25 @@ export default function RootNavigator() {
   const { status, bootstrapped, profile, subscription } = useSession();
 
   const base = isDark ? DarkTheme : DefaultTheme;
-  const appBg = colors.bg; // single source of truth
+  const appBg = colors.bg;
 
   const navTheme = useMemo(
     () => ({
-      ...base, // keep fonts/animations/etc
+      ...base,
       colors: {
         ...base.colors,
-        background: appBg, // screen background
-        card: appBg, // headers/tab surfaces
+        background: appBg,
+        card: appBg,
       },
     }),
     [isDark, appBg],
   );
 
   if (!bootstrapped || status === 'unknown') return null;
+
+  const hasValidSubscription =
+    !!subscription &&
+    (subscription.status === 'active' || subscription.status === 'trialing');
 
   return (
     <NavigationContainer theme={navTheme} linking={linking}>
@@ -45,7 +48,7 @@ export default function RootNavigator() {
       >
         {status === 'signedOut' ? (
           <AuthNavigation />
-        ) : subscription === null || subscription.status !== 'active' ? (
+        ) : !hasValidSubscription ? (
           <SubscriptionNavigation />
         ) : profile?.role === 'founder' ? (
           <AdminNavigation />

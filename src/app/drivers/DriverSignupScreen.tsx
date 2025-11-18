@@ -339,7 +339,7 @@ export default function DriverSignupScreen() {
         'driver',
         'active',
       );
-
+      console.log(' create user accountdata', JSON.stringify(data, null, 2));
       if (error) {
         Alert.alert('Error', error.message);
         return;
@@ -368,7 +368,10 @@ export default function DriverSignupScreen() {
           {},
           'available',
         );
-
+      console.log(
+        ' create employee accountdata',
+        JSON.stringify(employeeData, null, 2),
+      );
       if (employeeError) {
         Alert.alert('Error', employeeError.message);
         return;
@@ -400,7 +403,10 @@ export default function DriverSignupScreen() {
           completed_at: new Date().toISOString(),
         },
       );
-
+      console.log(
+        ' update invite error',
+        JSON.stringify(updateInviteError, null, 2),
+      );
       if (updateInviteError) {
         Alert.alert('Error', updateInviteError.message);
         return;

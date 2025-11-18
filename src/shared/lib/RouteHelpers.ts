@@ -76,6 +76,7 @@ export const grabRouteProfileAndDate = async (
     error: any | null;
     message: string | null;
   }>(`/routes/get-route-profile-and-date/${profileId}/${date}`);
+  console.log('res', res);
   return res.data;
 };
 

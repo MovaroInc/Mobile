@@ -53,14 +53,9 @@ import { useSession } from '../../state/useSession';
 import { getBusinessAdmin } from '../../shared/lib/BusinessHelpers';
 import { sendNotification } from '../../shared/lib/notifications';
 import { getOneFix } from '../../shared/lib/locations';
+import { api } from '../../shared/lib/api';
 
 const DevMode = true;
-
-/**
- * We still use Mapbox Directions HTTP API to fetch a route (no SDK needed).
- * Replace with your token.
- */
-const MAPBOX_TOKEN = '<YOUR_MAPBOX_TOKEN>';
 
 const STOP_STATUS_META: Record<string, { label: string; bg: string }> = {
   scheduled: { label: 'Scheduled', bg: '#6B7280' },
@@ -351,10 +346,10 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
       ) {
         setRouting(true);
         await getRoute(
-          here.coords.longitude,
           here.coords.latitude,
-          dest.longitude,
+          here.coords.longitude,
           dest.latitude,
+          dest.longitude,
         );
         setRouting(false);
         return true;
@@ -462,10 +457,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
     }
   };
 
-  // ───────── Directions (HTTP) → RN Maps polyline ─────────
-  function coordsToLatLng(points: number[][]): LatLng[] {
-    return points.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
-  }
+  // ───────── Directions via backend → RN Maps polyline ─────────
 
   function fitToPoints(points: LatLng[]) {
     if (!cameraRef.current || !points?.length) return;
@@ -476,31 +468,63 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
   }
 
   const getRoute = async (
-    originLng: number,
     originLat: number,
-    destLng: number,
+    originLng: number,
     destLat: number,
+    destLng: number,
   ) => {
     try {
       setRouteErr(null);
       setRouting(true);
 
-      const url =
-        `https://api.mapbox.com/directions/v5/mapbox/driving/` +
-        `${originLng},${originLat};${destLng},${destLat}` +
-        `?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`;
-      const res = await fetch(url);
-      const json = await res.json();
+      const start = `${originLat},${originLng}`;
+      const destination = `${destLat},${destLng}`;
 
-      const route = json?.routes?.[0];
-      if (route?.geometry?.coordinates?.length) {
-        const points = coordsToLatLng(route.geometry.coordinates as number[][]);
+      const response = await api.post<{
+        success: boolean;
+        data: {
+          duration: string;
+          duration_seconds: number;
+          distance: string;
+          distance_meters: number;
+          polyline: string;
+          raw?: any;
+        } | null;
+        error: any | null;
+        message: string | null;
+      }>('/navigation/get-route-details', {
+        start,
+        destination,
+      });
+
+      console.log('response', response);
+
+      if (!response.data?.success || !response.data?.data) {
+        console.log('response error', response);
+        console.warn('[getRoute] backend error', response.data?.message);
+        setRouteErr(response.data?.message || 'Unable to fetch route.');
+        setRoutePoints(null);
+        setRouteDistanceM(null);
+        setRouteDurationS(null);
+        return;
+      }
+
+      console.log('response.data.data', response.data.data.polyline);
+      const points = response.data.data?.polyline
+        ? decodePolyline(response.data.data?.polyline)
+        : [];
+
+      if (points.length) {
         setRoutePoints(points);
         setRouteDistanceM(
-          typeof route.distance === 'number' ? route.distance : null,
+          typeof data.distance_meters === 'number'
+            ? data.distance_meters
+            : null,
         );
         setRouteDurationS(
-          typeof route.duration === 'number' ? route.duration : null,
+          typeof data.duration_seconds === 'number'
+            ? data.duration_seconds
+            : null,
         );
         fitToPoints(points);
       } else {
@@ -513,7 +537,7 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
           { latitude: destLat, longitude: destLng },
         ]);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Directions fetch failed', e);
       setRouteErr('Unable to fetch route.');
       setRoutePoints(null);
@@ -919,7 +943,6 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
                   title="You"
                 />
               ) : null}
-
               {dest ? (
                 <Marker
                   coordinate={{
@@ -940,24 +963,16 @@ export default function SingleStopScreen({ route, onArrivedAPI }: Props) {
             </MapView>
 
             {/* Status pill */}
-            <View
+            {/* <View
               style={[
                 tw`absolute left-2 top-2 px-2 py-1 rounded-lg`,
                 { backgroundColor: 'rgba(15, 23, 42, 0.8)' },
               ]}
             >
               <Text style={tw`text-white text-2xs`}>
-                {locating
-                  ? 'Getting GPS fix…'
-                  : routing
-                  ? 'Routing…'
-                  : routeErr
-                  ? routeErr
-                  : current
-                  ? 'Ready'
-                  : 'Waiting…'}
+                
               </Text>
-            </View>
+            </View> */}
 
             {/* Refresh button */}
             <TouchableOpacity
@@ -1885,6 +1900,49 @@ function haversineMiles(
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function decodePolyline(encoded: string): LatLng[] {
+  console.log('encoded', encoded);
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+  const coordinates: LatLng[] = [];
+
+  while (index < len) {
+    let b;
+    let shift = 0;
+    let result = 0;
+
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+
+    const deltaLat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += deltaLat;
+
+    shift = 0;
+    result = 0;
+
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+
+    const deltaLng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += deltaLng;
+
+    coordinates.push({
+      latitude: lat / 1e5,
+      longitude: lng / 1e5,
+    });
+  }
+  console.log('coordinates', coordinates);
+  return coordinates;
 }
 
 function hhmmFromMaybeISO(v?: string | null) {

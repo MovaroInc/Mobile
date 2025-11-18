@@ -1,218 +1,87 @@
-import React, { useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+// src/app/subscription/SubscriptionScreen.tsx
+import React from 'react';
+import { Text, TouchableOpacity, View, Linking } from 'react-native';
 import { useTheme } from '../../shared/hooks/useTheme';
 import { useSession } from '../../state/useSession';
 import tailwind from 'twrnc';
-import { plans } from '../../shared/utils/subscriptions';
-import SubscriptionCard from '../../shared/components/cards/SubscriptionCard';
-import TempStandardButton from '../../shared/components/buttons/TempStandardButton';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
 
 const SubscriptionScreen = () => {
   const { colors } = useTheme();
-  const { setSignedOut } = useSession();
-  const navigation = useNavigation();
+  const { setSignedOut, subscription } = useSession();
 
-  const subscriptions = plans;
-
-  const [term, setTerm] = useState<'monthly' | 'annual'>('monthly');
-  const [title, setTitle] = useState('startup');
-  const [selectedPlan, setSelectedPlan] = useState<string>('startup-1');
-  const [selectedTier, setSelectedTier] = useState<string>('startup');
-
-  const selectingAPlan = async (plan: any, tier: any) => {
-    setSelectedPlan(plan.id);
-    setSelectedTier(tier.id);
-    await AsyncStorage.setItem('selectedPlan', JSON.stringify(plan));
-    await AsyncStorage.setItem('selectedTier', JSON.stringify(tier));
-    await AsyncStorage.setItem('selectedTerm', term);
-  };
-
-  const nextScreen = async () => {
-    navigation.navigate('Addons');
+  const handleOpenMovaroSite = () => {
+    // Use your live web domain / billing portal URL here
+    Linking.openURL('https://www.movaroinc.com');
+    // e.g. Linking.openURL('https://www.movaroinc.com/billing');
   };
 
   return (
     <View style={tailwind`flex-1 items-center justify-between p-4`}>
-      {/* Accent bar */}
-      <View style={tailwind`w-full flex-1 items-start justify-start`}>
+      <View style={tailwind`w-full flex-1`}>
+        {/* Header */}
         <View
-          style={tailwind`w-full flex flex-row items-center justify-between`}
+          style={tailwind`w-full flex-row items-center justify-between mb-4`}
         >
-          <View>
-            <Text
-              style={[tailwind`text-2xl font-semibold`, { color: colors.text }]}
-            >
-              Subscription
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => {
-              if (selectedPlan) {
-                setSignedOut();
-              }
-            }}
+          <Text
+            style={[tailwind`text-2xl font-semibold`, { color: colors.text }]}
           >
+            Subscription required
+          </Text>
+
+          <TouchableOpacity onPress={setSignedOut}>
             <Text style={[tailwind`text-base`, { color: colors.accent }]}>
               Log out
             </Text>
           </TouchableOpacity>
         </View>
-        <View style={tailwind`w-11/12 mt-3`}>
+
+        {/* Info copy */}
+        <View style={tailwind`w-11/12 mt-2`}>
           <Text style={[tailwind`text-base`, { color: colors.text }]}>
-            Select your subscription based on your needs
+            This Movaro account doesn&apos;t currently have an active
+            subscription.
+          </Text>
+
+          <Text
+            style={[tailwind`text-sm mt-3 leading-5`, { color: colors.text }]}
+          >
+            Subscriptions for Movaro are managed on our website. To start or
+            update a subscription for your business, open Movaro in your
+            browser. Once your subscription is active or trialing, return to the
+            app and sign in again.
+          </Text>
+
+          {subscription?.status && (
+            <Text style={[tailwind`text-xs mt-3`, { color: colors.text }]}>
+              Current status: {subscription.status}
+            </Text>
+          )}
+        </View>
+
+        {/* Button to open website */}
+        <View style={tailwind`w-11/12 mt-6`}>
+          <TouchableOpacity
+            style={[
+              tailwind`py-3 rounded-2xl items-center`,
+              { backgroundColor: colors.brand.primary },
+            ]}
+            onPress={handleOpenMovaroSite}
+          >
+            <Text
+              style={[tailwind`text-base font-semibold`, { color: 'white' }]}
+            >
+              Open Movaro website
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Small disclaimer for reviewer clarity */}
+        <View style={tailwind`w-11/12 mt-4`}>
+          <Text style={[tailwind`text-xs`, { color: colors.text }]}>
+            Note: Account creation and subscription purchase are completed on
+            the Movaro website, outside of this iOS app.
           </Text>
         </View>
-        <View
-          style={[
-            tailwind`w-full flex flex-row items-center justify-between rounded-2 mt-4 p-2`,
-            { backgroundColor: colors.border },
-          ]}
-        >
-          <TouchableOpacity
-            style={[
-              tailwind`w-[49%] py-2 flex items-center bg-blue-200 rounded-2`,
-              {
-                backgroundColor:
-                  term === 'monthly' ? colors.brand.primary : colors.border,
-              },
-            ]}
-            onPress={() => setTerm('monthly')}
-          >
-            <Text
-              style={[
-                tailwind`font-semibold`,
-                { color: term === 'monthly' ? 'white' : colors.text },
-              ]}
-            >
-              Monthly
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              tailwind`w-[49%] py-2 flex items-center bg-blue-200 rounded-2`,
-              {
-                backgroundColor:
-                  term === 'annual' ? colors.brand.primary : colors.border,
-              },
-            ]}
-            onPress={() => setTerm('annual')}
-          >
-            <Text
-              style={[
-                tailwind`font-semibold`,
-                { color: term === 'annual' ? 'white' : colors.text },
-              ]}
-            >
-              Annual (20% off)
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <View
-          style={[
-            tailwind`w-full flex flex-row items-center justify-between rounded-2 mt-4 p-2`,
-            { backgroundColor: colors.border },
-          ]}
-        >
-          <TouchableOpacity
-            style={[
-              tailwind`w-[32%] py-2 flex items-center bg-blue-200 rounded-2`,
-              {
-                backgroundColor:
-                  title === 'startup' ? colors.brand.primary : colors.border,
-              },
-            ]}
-            onPress={() => setTitle('startup')}
-          >
-            <Text
-              style={[
-                tailwind`font-semibold`,
-                { color: title === 'startup' ? 'white' : colors.text },
-              ]}
-            >
-              Starter
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              tailwind`w-[32%] py-2 flex items-center bg-blue-200 rounded-2`,
-              {
-                backgroundColor:
-                  title === 'growth' ? colors.brand.primary : colors.border,
-              },
-            ]}
-            onPress={() => setTitle('growth')}
-          >
-            <Text
-              style={[
-                tailwind`font-semibold`,
-                { color: title === 'growth' ? 'white' : colors.text },
-              ]}
-            >
-              Growth
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              tailwind`w-[32%] py-2 flex items-center bg-blue-200 rounded-2`,
-              {
-                backgroundColor:
-                  title === 'enterprise' ? colors.brand.primary : colors.border,
-              },
-            ]}
-            onPress={() => setTitle('enterprise')}
-          >
-            <Text
-              style={[
-                tailwind`font-semibold`,
-                { color: title === 'enterprise' ? 'white' : colors.text },
-              ]}
-            >
-              Enterprise
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <View style={tailwind`flex-1 mt-4`}>
-          {subscriptions.tiers.map(tier => {
-            if (tier.id === title) {
-              return (
-                <View key={tier.id} style={tailwind`w-full`}>
-                  <Text
-                    style={[
-                      tailwind`text-xl font-bold`,
-                      { color: colors.text },
-                    ]}
-                  >
-                    {tier.label}
-                  </Text>
-                  <Text style={[tailwind`text-sm`, { color: colors.text }]}>
-                    {tier.description}
-                  </Text>
-                  <ScrollView style={tailwind`mb-12`}>
-                    {tier.plans.map(plan => (
-                      <SubscriptionCard
-                        key={plan.id}
-                        plan={plan}
-                        tier={tier}
-                        term={term}
-                        title={title}
-                        selected={selectedPlan}
-                        onPress={selectingAPlan}
-                      />
-                    ))}
-                  </ScrollView>
-                </View>
-              );
-            }
-          })}
-        </View>
-        <TempStandardButton
-          label={"Addon's"}
-          loading={false}
-          onPress={nextScreen}
-          active={selectedPlan ? true : false}
-        />
       </View>
     </View>
   );

@@ -103,7 +103,9 @@ export default function DriverInviteScreen() {
   }, [form.username]);
 
   const validatingEmail = async (email: string) => {
+    console.log('validatingEmail', email);
     const { valid, error } = await validateEmailField(email);
+    console.log('validatingEmail', JSON.stringify({ valid, error }, null, 2));
     if (error) throw error;
     setEmailTaken(!valid);
   };

@@ -1,6 +1,5 @@
-// App.tsx - Fixed Push Notifications (Custom Native Module Integration)
 import React, { useEffect } from 'react';
-import { StatusBar, View, Platform, Alert, NativeModules } from 'react-native'; // <-- NativeModules added
+import { StatusBar, View, Platform, Alert, NativeModules } from 'react-native';
 import {
   SafeAreaProvider,
   initialWindowMetrics,
@@ -11,15 +10,23 @@ import AppProvider from './src/providers/AppProvider';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { useTheme } from './src/shared/hooks/useTheme';
 import RootNavigator from './src/navigation/RootNavigation';
-import Geolocation from '@react-native-community/geolocation';
+// Removed redundant Geolocation import as it's handled in location.ts
+// import Geolocation from '@react-native-community/geolocation';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// We still import the PushService, but its token retrieval/logging logic is now done here
 import PushService, {
   requestNotificationPermission,
 } from './src/shared/lib/PushNotificationService';
 import { useSession } from './src/state/useSession';
 import { storeNotificationToken } from './src/shared/lib/notifications';
+
+// --- NEW IMPORTS ---
+import {
+  getOneFix,
+  openAppSettings,
+  LocationLevel,
+} from './src/shared/lib/locations';
+// -------------------
 
 const { APNSTokenManager } = NativeModules;
 
@@ -32,6 +39,7 @@ const retrieveTokenFromNativeModule = async (profile: any) => {
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
       const token = await APNSTokenManager.getDeviceToken();
+      console.log('token', token);
 
       if (token) {
         await AsyncStorage.setItem('@apns_device_token', token);
@@ -47,6 +55,7 @@ const retrieveTokenFromNativeModule = async (profile: any) => {
             os_version: Platform.OS,
             profile_id: profile?.id,
           };
+          console.log('payload', payload);
           await storeNotificationToken(payload);
         }
         return; // Exit loop on success
@@ -65,26 +74,47 @@ const retrieveTokenFromNativeModule = async (profile: any) => {
   }
 };
 
+/** * Handles checking and requesting location permission, and alerting the user
+ * if permission is denied.
+ */
+const handleLocationPermission = async () => {
+  try {
+    const level: any = await getOneFix();
+
+    if (!level?.ok) {
+      // Permission was not granted after prompting, alert the user and offer to open settings
+      Alert.alert(
+        'Location Access Needed',
+        'We need access to your location to calculate routes and check your proximity to the base. Please enable it in Settings.',
+        [
+          {
+            text: 'Not now',
+            style: 'cancel',
+          },
+          {
+            text: 'Open Settings',
+            onPress: openAppSettings,
+          },
+        ],
+      );
+    }
+    // If authorized, the app can now reliably call getOneFix()
+  } catch (e) {
+    console.error('Error during location permission flow:', e);
+  }
+};
+
 export default function App() {
   const { isDark, colors } = useTheme();
   const { profile } = useSession();
-  const checkLocation = () => {
-    const geo_success = (position: any) => {};
-    const geo_error = (error: any) => {
-      console.log('geo_error', error);
-    };
-    Geolocation.getCurrentPosition(geo_success, geo_error, {
-      enableHighAccuracy: true,
-      timeout: 20000,
-      maximumAge: 1000,
-    });
-  };
+
+  // NOTE: Removed the old, unreliable checkLocation() function.
+  // The location logic is now handled by handleLocationPermission().
 
   useEffect(() => {
-    // 1. Request permissions (which triggers native registration via AppDelegate)
+    // 1. Handle Push Notification permissions and token retrieval
     requestNotificationPermission()
       .then(granted => {
-        // 2. Start polling for the token stored by the native module
         if (granted) {
           retrieveTokenFromNativeModule(profile || null);
         }
@@ -93,7 +123,8 @@ export default function App() {
         console.log('error requesting notification permission');
       });
 
-    checkLocation();
+    // 2. Handle Location permissions
+    void handleLocationPermission();
 
     // Note: Since you are using a custom native module, PushService.initialize() is
     // redundant for token fetching but might be needed for notification listeners.

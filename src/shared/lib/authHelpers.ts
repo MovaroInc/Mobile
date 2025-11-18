@@ -211,32 +211,19 @@ export async function updateProfileAndBusiness(
   employee: any,
   customer: any,
 ): Promise<{ success: boolean; data: any; error: any; message: string }> {
-  const resp = await api.post<{
-    success: boolean;
-    data: any | null;
-    error: any | null;
-    message: string | null;
-  }>(`/users/update-profile/${profile.id}`, {
+  const resp = await api.post(`/users/update-profile/${profile.id}`, {
     business_id: business.id,
     employee_id: employee.id,
   });
+  console.log('resp', JSON.stringify(resp.data, null, 2));
   if (!resp.data.success) {
-    return {
-      success: false,
-      data: null,
-      error: resp.data.error,
-      message: resp.data.message,
-    };
+    return resp.data;
   }
 
-  const resp2 = await api.put<{
-    success: boolean;
-    data: any | null;
-    error: any | null;
-    message: string | null;
-  }>(`/business/update-business/${business.id}`, {
+  const resp2 = await api.put(`/business/update-business/${business.id}`, {
     customer_id: customer.id,
   });
+  console.log('resp2', JSON.stringify(resp2.data, null, 2));
   if (!resp2.data.success) {
     return {
       success: false,
@@ -245,7 +232,7 @@ export async function updateProfileAndBusiness(
       message: resp2.data.message,
     };
   }
-  return { success: true, data: resp2.data.data, error: null, message: null };
+  return resp2.data;
 }
 
 const attemptLogin = async (username: string, password: string) => {

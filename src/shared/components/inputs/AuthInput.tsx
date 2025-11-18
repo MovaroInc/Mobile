@@ -6,6 +6,7 @@ import {
   TextInputProps,
   TouchableOpacity,
   Text,
+  Platform,
 } from 'react-native';
 import tw from 'twrnc';
 import * as Feather from 'react-native-feather'; // ← gives us an object of icons
@@ -68,7 +69,7 @@ export default function AuthInput({
             <Text style={[tw`text-sm text-red-500 mb-3.5`]}>{'  '}</Text>
           )}
         </View>
-        <View style={tw`flex-1 py-4`}>
+        <View style={tw`flex-1 ${Platform.OS === 'ios' ? 'py-4' : 'py-.5'}`}>
           <TextInput
             value={value}
             onChangeText={onChangeText}

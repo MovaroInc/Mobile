@@ -950,7 +950,7 @@ export default function AddStopScreen1() {
 
             <View style={[tw`mt-1 flex-row items-center`, { opacity: 0.8 }]}>
               <MapPin width={14} height={14} color={colors.muted} />
-              <Text style={[tw`ml-2 text-2xs`, { color: colors.muted }]}>
+              <Text style={[tw`ml-2 text-xs`, { color: colors.muted }]}>
                 We’ll geocode this address automatically on save.
               </Text>
             </View>

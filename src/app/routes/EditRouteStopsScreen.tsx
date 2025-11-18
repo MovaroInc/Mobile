@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+  Linking,
 } from 'react-native';
 import tw from 'twrnc';
 import { useTheme } from '../../shared/hooks/useTheme';
@@ -66,6 +67,7 @@ import { createOptimizedRoute } from '../../shared/lib/optimications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBusinessAdmin } from '../../shared/lib/BusinessHelpers';
 import { sendNotification } from '../../shared/lib/notifications';
+import { getLast30DaysUsage } from '../../shared/lib/SubscriptionHelpers';
 
 /* ───────────────────────── Utils ───────────────────────── */
 
@@ -378,9 +380,48 @@ export default function EditRouteStopsScreen() {
   const MOVABLE = new Set<StopStatus>(['planned', 'scheduled']);
   const canMoveStop = (s?: Stop) => !!s && (!s.status || MOVABLE.has(s.status));
 
-  const openCreate = () => {
-    nav.navigate('AddStopScreen1', { routeId, stopsCount: stops.length });
+  const openCreate = async () => {
+    try {
+      console.log('business', business);
+
+      const usage = await getLast30DaysUsage(business?.id ?? 0);
+      console.log('usage', usage);
+      console.log('business?.id', business?.id);
+
+      // If backend says "no limit / not enforced" or the check fails → continue
+      // if (
+      //   !usage ||
+      //   usage.allowed_stops == null ||
+      //   usage.remaining_stops == null
+      // ) {
+      //   nav.navigate('AddStopScreen1', { routeId, stopsCount: stops.length });
+      //   return;
+      // }
+
+      if (usage.remaining_stops <= 0) {
+        Alert.alert(
+          'Stop limit reached',
+          'You have reached the limit of stops. Please contact Movaro support.',
+          [
+            {
+              text: 'Contact Support',
+              onPress: () =>
+                Linking.openURL('https://www.movaroinc.app/app/login'), // ideally a support/contact page
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ],
+        );
+        return;
+      }
+
+      nav.navigate('AddStopScreen1', { routeId, stopsCount: stops.length });
+    } catch (e: any) {
+      console.warn('openCreate usage check failed', e);
+      // Fails open: don't block the user if the usage check itself fails
+      // nav.navigate('AddStopScreen1', { routeId, stopsCount: stops.length });
+    }
   };
+
   const openEdit = (s: Stop) => {
     nav.navigate('StopSummaryEditScreen', { stop: s });
   };

@@ -134,6 +134,7 @@ export const useSession = create<SessionState>()(
         try {
           const res = await api.post('/users/me', { userId });
           const me = res.data as MeResponse;
+          console.log('me', me);
           if (me?.success) {
             set(s => ({
               ...s,

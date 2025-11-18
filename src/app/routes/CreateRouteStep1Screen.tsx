@@ -323,7 +323,7 @@ export default function CreateRouteStep1Screen() {
       status: 'draft' as const,
       planned_start_at: combineISODateAndTimeUTC(selectedIso, plannedStart),
       start_longitude: business.longitude || 0,
-      start_latitude: latitude || 0,
+      start_latitude: business.latitude || 0,
       tags: tagsInput
         .split(',')
         .map(t => t.trim())

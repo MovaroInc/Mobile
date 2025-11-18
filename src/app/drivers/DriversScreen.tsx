@@ -130,7 +130,7 @@ const selectedDate = convertToYYYYMMDD(new Date().toLocaleDateString());
 export default function DriversScreen() {
   const nav = useNavigation<any>();
   const { colors } = useTheme();
-  const { business } = useSession();
+  const { business, subscription } = useSession();
   const { rowsMap } = useLiveLocations(business?.id);
 
   // Tabs
@@ -368,7 +368,28 @@ export default function DriversScreen() {
 
   /* ─────────────── actions ─────────────── */
 
-  const onInvite = () => nav.navigate('DriverInvite');
+  const onInvite = () => {
+    const numberofDrivers = drivers.length;
+    console.log('numberofDrivers', numberofDrivers);
+    console.log('subscription', subscription);
+    if (numberofDrivers < subscription?.drivers_allowed) {
+      nav.navigate('DriverInvite');
+    } else {
+      Alert.alert(
+        'Drivers limit reached',
+        'You have reached the limit of drivers. Please contact Movaro support.',
+        [
+          {
+            text: 'Contact Support',
+            onPress: () =>
+              Linking.openURL('https://www.movaroinc.app/app/login'), // ideally a support/contact page
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ],
+      );
+    }
+  };
+
   const onOpenProfile = (driver: Driver) =>
     nav.navigate('DriverOverview', { profileId: driver.profile_id });
   const onCall = (driver: Driver) => {

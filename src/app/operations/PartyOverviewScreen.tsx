@@ -153,17 +153,17 @@ export default function CustomerVendorOverviewScreen() {
     longitude: number;
   } | null>(() => {
     const lng =
-      (business as any)?.longitude ??
-      (business as any)?.lng ??
-      (business as any)?.hq_lng;
+      (entity as any)?.longitude ??
+      (entity as any)?.lng ??
+      (entity as any)?.hq_lng;
     const lat =
-      (business as any)?.latitude ??
-      (business as any)?.lat ??
-      (business as any)?.hq_lat;
+      (entity as any)?.latitude ??
+      (entity as any)?.lat ??
+      (entity as any)?.hq_lat;
     return typeof lng === 'number' && typeof lat === 'number'
       ? { longitude: lng, latitude: lat }
       : null;
-  }, [business]);
+  }, [entity]);
 
   const entityPoint = useMemo<{
     latitude: number;
@@ -175,10 +175,12 @@ export default function CustomerVendorOverviewScreen() {
     return null;
   }, [entity]);
 
-  const initialRegion = useMemo(() => {
+  // Unified logic for the target region/zoom level
+  const targetRegion = useMemo(() => {
     const center = entityPoint ||
       hqCenter || { latitude: 39.5, longitude: -98.35 };
-    const delta = entityPoint ? 0.04 : hqCenter ? 0.08 : 30;
+    // Delta determines the zoom level: small delta (0.015) = very zoomed in
+    const delta = entityPoint ? 0.015 : hqCenter ? 0.08 : 30;
     return { ...center, latitudeDelta: delta, longitudeDelta: delta };
   }, [entityPoint, hqCenter]);
 
@@ -210,16 +212,39 @@ export default function CustomerVendorOverviewScreen() {
             .join(', '),
       }));
 
+      // Update state
       setEntity(prev => ({ ...(prev || ({} as any)), ...e }));
       setMetrics(m || null);
       setRecentStops(normalizedStops);
+
+      // 🔥 FIX: Animate map view after data is successfully loaded (critical for Android)
+      // Use the 'e' from the successful fetch to determine the center point now.
+      const point =
+        e.lat && e.lng ? { latitude: e.lat, longitude: e.lng } : null;
+
+      if (mapRef.current) {
+        // Recalculate the region using the fetched entity coordinates (if available)
+        const regionToAnimate = point
+          ? {
+              latitude: point.latitude,
+              longitude: point.longitude,
+              latitudeDelta: 0.015,
+              longitudeDelta: 0.015,
+            }
+          : targetRegion; // Fallback to HQ or default
+
+        // Use a small timeout to ensure map rendering finishes before animating
+        setTimeout(() => {
+          mapRef.current?.animateToRegion(regionToAnimate, 500);
+        }, 100);
+      }
     } catch {
       setMetrics(null);
       setRecentStops([]);
     } finally {
       setLoading(false);
     }
-  }, [entityId, entityType]);
+  }, [entityId, entityType, targetRegion]); // targetRegion ensures latest fallback is used
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -237,6 +262,15 @@ export default function CustomerVendorOverviewScreen() {
 
   const onBack = () => nav.goBack();
   const onCall = () => entity?.phone && Linking.openURL(`tel:${entity.phone}`);
+
+  // Create Directions URL logic to ensure consistency
+  const onNavigate = () => {
+    if (entityPoint) {
+      // Use Google Maps URL scheme directly for best cross-platform compatibility
+      const url = `http://maps.google.com/maps?daddr=${entityPoint.latitude},${entityPoint.longitude}&dirflg=d`;
+      Linking.openURL(url);
+    }
+  };
 
   /* ─────────────── render ─────────────── */
 
@@ -309,16 +343,31 @@ export default function CustomerVendorOverviewScreen() {
         <MapView
           ref={mapRef}
           style={tw`flex-1`}
-          initialRegion={initialRegion}
+          // The region passed to initialRegion is correct.
+          initialRegion={
+            entityPoint
+              ? {
+                  latitude: entityPoint.latitude,
+                  longitude: entityPoint.longitude,
+                  latitudeDelta: 0.015,
+                  longitudeDelta: 0.015,
+                }
+              : targetRegion
+          }
           showsUserLocation={false}
           toolbarEnabled={false}
           showsCompass
         >
           {/* HQ pin */}
           {hqCenter && (
-            <Marker coordinate={hqCenter}>
+            <Marker
+              // FIX 1: The coordinate must be a simple {latitude, longitude} object.
+              coordinate={hqCenter}
+              // FIX 2: Add zIndex for Android visibility with custom views.
+              zIndex={999}
+            >
               <View style={{ alignItems: 'center' }}>
-                <MapBadge>{(business as any)?.name || 'HQ'}</MapBadge>
+                <MapBadge>{(entity as any)?.name || 'HQ'}</MapBadge>
                 <View
                   style={{
                     width: 22,
@@ -336,7 +385,11 @@ export default function CustomerVendorOverviewScreen() {
 
           {/* Entity pin */}
           {entityPoint && (
-            <Marker coordinate={entityPoint}>
+            <Marker
+              coordinate={entityPoint}
+              // FIX 2: Add zIndex for Android visibility with custom views.
+              zIndex={1000}
+            >
               <View style={{ alignItems: 'center' }}>
                 <MapBadge>
                   <Text
@@ -393,11 +446,7 @@ export default function CustomerVendorOverviewScreen() {
             {typeof entity?.lat === 'number' &&
             typeof entity?.lng === 'number' ? (
               <TouchableOpacity
-                onPress={() => {
-                  Linking.openURL(
-                    `https://www.google.com/maps/dir/?api=1&destination=${entity?.lat},${entity?.lng}`,
-                  );
-                }}
+                onPress={onNavigate} // Use the new navigation handler
                 style={[
                   tw`self-start mt-2 px-3 py-2 rounded-xl ml-4`,
                   { backgroundColor: colors.brand?.primary || '#2563eb' },

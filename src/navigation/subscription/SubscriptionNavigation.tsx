@@ -18,9 +18,6 @@ export default function SubscriptionNavigation() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Subscription" component={SubscriptionScreen} />
-      <Stack.Screen name="Addons" component={AddonsScreen} />
-      <Stack.Screen name="Confirmation" component={ConfirmationScreen} />
-      <Stack.Screen name="BillingSetup" component={BillingSetupScreen} />
     </Stack.Navigator>
   );
 }

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../shared/hooks/useTheme';
@@ -92,12 +93,31 @@ const LoginScreen = () => {
     }
   };
 
-  const handleRedirectBusiness = async () => {
-    navigation.navigate('SignupBusinessAccount');
+  const handleLearnMore = () => {
+    // Optional: Alert first
+    Alert.alert(
+      'Open movaroinc.app',
+      'You will be redirected to your browser to learn more about what Movaro can do for your business.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Continue',
+          onPress: () => {
+            Linking.openURL('https://movaro-web-g4bx.onrender.com');
+          },
+        },
+      ],
+    );
   };
-
   const handleRedirectDriver = async () => {
     navigation.navigate('DriverSignup');
+  };
+
+  const handleRedirectAdmin = async () => {
+    navigation.navigate('SignupBusinessAccount');
   };
 
   return (
@@ -109,7 +129,7 @@ const LoginScreen = () => {
           {/* Accent bar */}
           <View
             style={[
-              tw`w-1/3 h-2 rounded-full mt-2`,
+              tw`w-1/4 h-2 rounded-full mt-2`,
               { backgroundColor: colors.brand.primary },
             ]}
           />
@@ -190,10 +210,10 @@ const LoginScreen = () => {
             <SecondaryAuthButton
               label="Signup as Business"
               loading={false}
-              onPress={handleRedirectBusiness}
+              onPress={handleRedirectAdmin}
             />
             <SecondaryAuthButton
-              label="Signup as Driver"
+              label="Register as Driver"
               loading={false}
               onPress={handleRedirectDriver}
             />
@@ -203,8 +223,7 @@ const LoginScreen = () => {
         {/* BOTTOM FOOTER (pinned to bottom by justify-between) */}
         <View style={tw`px-6 pb-4`}>
           <Text style={[tw`text-xs text-center`, { color: colors.text }]}>
-            By continuing, you agree to Movaro Inc. Terms of Service and Privacy
-            Policy.
+            By continuing, you agree to Movaro Inc. Terms of Service.
           </Text>
         </View>
       </View>
